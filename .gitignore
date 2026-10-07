@@ -1,0 +1,12 @@
+# made by the tools
+build/
+__pycache__/
+.venv/
+# paths of this machine (see tools/ppu.py and tools/trace.py)
+rc1_elf.path
+rpcs3.path
+# editor leftovers
+.~lock.*
+.claude/
+# the author's working notes
+NOTES.md

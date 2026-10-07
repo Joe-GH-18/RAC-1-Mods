@@ -1,0 +1,3 @@
+# Only for build.py and the tools in tools/. patch.py needs nothing but Python 3.
+capstone
+keystone-engine
