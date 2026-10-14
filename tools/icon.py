@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Draw the Charge Boots menu icon and write it as the two 64x64 DXT5 textures build.py embeds.
+"""Draw the Charge Boots menu icon and write it as the two 64x64 DXT5 textures mods/chargeboots.py embeds.
 
 The game's item icons come in two versions: a black shape for an item that is not in use and a
 white one for the item worn. The background is taken from the Grindboots icon

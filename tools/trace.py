@@ -21,7 +21,7 @@ GAME = os.environ.get("RPCS3_EBOOT") or os.path.expanduser("~/.config/rpcs3/dev_
 SIG_VA, SIG = 0x10200, bytes.fromhex("f821ff917c0802a6")
 HERO = 0x969CE0
 STATE, SPEED, STICK = HERO + 0x2084, HERO + 0x194, HERO + 0x229C
-CHARGE = 0x1606320 + 8      # charge boots frame counter (see build.py)
+CHARGE = 0x1606320 + 8      # charge boots frame counter (see mods/game.py)
 RING_IDX = 0xA10954
 PLANET = 0x969C70
 PAD_HELD = 0x964A40 + 0xA0
@@ -81,6 +81,10 @@ def main():
     # build/cmd.out. "r <addr> <len>" reads, "w <addr> <hex bytes>" writes (addresses in hex).
     here = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "build")
     cmd_path, out_path, cmd_seen = os.path.join(here, "cmd"), os.path.join(here, "cmd.out"), 0.0
+    try:
+        cmd_seen = os.path.getmtime(cmd_path)     # commands left from an earlier game are not for this one
+    except OSError:
+        pass
     wmem = open(f"/proc/{pid}/mem", "r+b", buffering=0)
 
     def run_commands():
@@ -111,6 +115,7 @@ def main():
     sampled = 0.0
     other_last = None       # (hero type, animation, buttons) while the hero is not Ratchet
     dash_last = 0
+    levels_last = None      # weapon experience and gold versions (see mods/weaponlevels.py)
     while proc.poll() is None:
         run_commands()
         try:
@@ -142,7 +147,7 @@ def main():
                       f" z={rd(HERO + 0x88, 'f'):.2f} ground={rd(HERO + 0x2D8, 'f'):.2f} distance={rd(HERO + 0x2DC, 'f'):.2f}"
                       f" wall={rd(HERO + 0x257, 'B')} on_crate={rd(HERO + 0x30A, 'H')} ground_moby={rd(HERO + 0x2FC, 'I'):#x}"
                       f" slope={rd(HERO + 0x2E0, 'f'):.2f}/{rd(HERO + 0x2E4, 'f'):.2f} frames_on_ground={rd(HERO + 0x300, 'i')}", flush=True)
-            strafe = rd(0x1606320 + 0x50, "i")    # strafing timer (see build.py)
+            strafe = rd(0x1606320 + 0x50, "i")    # strafing timer (see mods/game.py)
             if strafe and rd(STICK, "f") > 0.1 and now - sampled >= 0.1:      # ten lines a second while strafing
                 sampled = now
                 vel = [rd(HERO + 0xE0 + 4 * i, "f") * 60 for i in range(2)]
@@ -178,7 +183,7 @@ def main():
                           f" wall={rd(HERO + 0x257, 'B')} off_ground={rd(HERO + 0x30E, 'H')} moby_z-hero_z={rd(moby + 0x18, 'f') - rd(HERO + 0x88, 'f'):.2f}"
                           f" moby_euler=({rd(moby + 0x40, 'f'):.2f}, {rd(moby + 0x44, 'f'):.2f}, {rd(moby + 0x48, 'f'):.2f})" + hit,
                           flush=True)
-            dash = rd(0x1606320 + 0x90, "i")      # Clank's dash frame counter (see build.py)
+            dash = rd(0x1606320 + 0x90, "i")      # Clank's dash frame counter (see mods/game.py)
             if dash > 0 or dash_last > 0:
                 print(f"{now:8.2f}s   dash={dash} state={st:#x} speed={speed * 60:.1f}"
                       f" vz={rd(HERO + 0xE8, 'f') * 60:.1f} z-ground={rd(HERO + 0x88, 'f') - rd(HERO + 0x2D8, 'f'):.2f}"
@@ -190,6 +195,14 @@ def main():
                       f" camera_distance={((rd(0x9513C0 + 0x140, 'f') - rd(HERO + 0x80, 'f')) ** 2 + (rd(0x9513C0 + 0x144, 'f') - rd(HERO + 0x84, 'f')) ** 2) ** 0.5:.2f}",
                       flush=True) if dash != dash_last else None
             dash_last = dash
+            levels = (rd(0x96C0AC, "32s"), rd(0x969CA8, "40s"))
+            if levels != levels_last:
+                xp = struct.unpack(">2H4x12H", levels[0])
+                print(f"{now:8.2f}s weapons: hand_item={rd(HERO + 0x10B8, 'i'):#x} experience="
+                      + " ".join(f"{item:#x}:{'L2' if value == 0xFFFF else value}" for item, value in
+                                 zip((0x9, 0xA, 0xB, 0xD, 0xF, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x17, 0x18, 0x19), xp))
+                      + " gold=" + ",".join(f"{item:#x}" for item, flag in enumerate(levels[1]) if flag), flush=True)
+                levels_last = levels
             if st != last:
                 print(f"{now:8.2f}s state {last if last is None else hex(last)} -> {st:#x}"
                       f"  speed={speed * 60:.1f} units/s stick={rd(STICK, 'f'):.2f}"
