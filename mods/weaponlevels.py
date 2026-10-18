@@ -119,7 +119,7 @@ DRONE_HOOK_WORD = 0x607F0000
 # within 12 units.) Who reads +0x18 differs by enemy, so the mod keeps its own table of the lured
 # (state +LURES): a lured enemy that dies within LURE_FRAMES counts for the Taunter.
 # Level 2, the user's pick: a lured enemy that comes within STUN_ARRIVE of Ratchet stands stunned
-# for STUN_FRAMES. The moby loop 0xfc238 runs each moby's animation (MOBY_ANIM, unless moby +0x34
+# for STUN_FRAMES. The moby loop (MOBY_LOOP_HOOKS) runs each moby's animation (MOBY_ANIM, unless moby +0x34
 # has 0x40) and its update (the descriptor at +0x74); a stunned enemy gets neither, so it stands
 # in its pose, with gold puffs above it (DAZE). An enemy only takes its damage in its own update,
 # so a hit ends the stun: DEAL_DAMAGE writes the ring entry's index into moby +0xa4. It can be
@@ -127,9 +127,11 @@ DRONE_HOOK_WORD = 0x607F0000
 TAUNTER = 0x0E
 LURE_HOOKS = (0x2B0D64, 0x2B0D70)      # stw r31, 0x18(r26)
 LURE_HOOK_WORD = 0x93FA0018
-MOBY_UPDATE_HOOK = 0xFC2E0     # lwz r3, 0x74(r31) in the moby loop (r31 = the moby)
+# The moby loop exists three times (0xfc024, 0xfc168, 0xfc238, the last with a second, profiling
+# copy); the first build hooked only 0xfc238 and stunned nothing in game. Each pair: bl MOBY_ANIM
+# (r3 = the moby) and lwz r3, 0x74(r31) (r31 = the moby) two instructions behind it.
+MOBY_LOOP_HOOKS = (0xFC0EC, 0xFC1B4, 0xFC2D8, 0xFC3F4)
 MOBY_UPDATE_HOOK_WORD = 0x807F0074
-MOBY_ANIM_HOOK = 0xFC2D8       # bl MOBY_ANIM (r3 = the moby)
 MOBY_ANIM = 0xF98D8
 # The table: LURE_COUNT entries of LURE_SIZE bytes, {+0 moby (0 = free), +4 its class (u16), +6
 # its moby +0xa4 when the stun began (byte), +8 the frame it was last lured in, +0xc the frame its
@@ -2057,7 +2059,8 @@ def hooks(args):
     return [Hook(KILL_HOOK, "xp_kill", KILL_HOOK_WORD), Hook(DECOY_HOOK, "decoy_seen", DECOY_HOOK_WORD),
             Hook(DRONE_HOOK, "drone_seen", DRONE_HOOK_WORD),
             *(Hook(site, "taunt_lure", LURE_HOOK_WORD) for site in LURE_HOOKS),
-            Hook(MOBY_UPDATE_HOOK, "moby_update", MOBY_UPDATE_HOOK_WORD), Hook(MOBY_ANIM_HOOK, "moby_anim", MOBY_ANIM),
+            *(Hook(site + 8, "moby_update", MOBY_UPDATE_HOOK_WORD) for site in MOBY_LOOP_HOOKS),
+            *(Hook(site, "moby_anim", MOBY_ANIM) for site in MOBY_LOOP_HOOKS),
             *(Hook(site, label, word) for site, word, label in DRONE_CAP_HOOKS),
             Hook(DAMAGE_HOOK, "damage", DAMAGE_HOOK_WORD, jump=True),
             Hook(SWEEP_DAMAGE_HOOK, "sweep_damage", SWEEP_DAMAGE_HOOK_WORD, jump=True),
