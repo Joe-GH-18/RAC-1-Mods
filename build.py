@@ -15,6 +15,8 @@ This file puts them into the executable:
   * The game instructions a mod hooks become calls of its routines. Where several mods hook the
     same instruction, their routines are chained (Hook in mods/game.py).
   * The data a mod embeds is appended to the file and loaded through unused program headers.
+    Where that is Ratchet & Clank 2's data (mods/rc2.py), the patch only names it: build.py and
+    patch.py take it from RC2's files (rc2data.py), so no game data is in the patch files.
 Each mod comes out as a patch of its own (patch.py's Patch), and the executable is the
 untouched one with the chosen patches linked in by patch.py's own code, so what this file
 builds and what the patcher makes of the exported patch files are the same bytes.
@@ -32,7 +34,8 @@ Usage
     .venv/bin/python build.py --help       the mods' tuning options (radius, speeds) and paths
     SHOW=1 .venv/bin/python build.py       also print the disassembly of the cave
 The input ELF is found through tools/ppu.py (environment variable RC1_ELF overrides the path),
-the installation target through RPCS3_EBOOT.
+RC2's data next to it (rc2/ps3data, or the environment variable RC2_DATA), the installation
+target through RPCS3_EBOOT.
 """
 import argparse
 import hashlib
@@ -51,6 +54,7 @@ from ppu import RC1_ELF, Elf, show  # noqa: E402
 
 import patch as patcher  # noqa: E402
 from mods import LIBRARIES, MODS  # noqa: E402
+from mods.rc2 import flatten, source as rc2_source  # noqa: E402
 from mods.game import CAVE_START, FAR_CODE, GAME, ORIG_MD5, SEG_END, SEGMENTS, STATE, STATE_END, floats, ha, lo  # noqa: E402
 
 DEFAULT_OUT = os.path.join(ROOT, "build", "EBOOT.elf")
@@ -99,7 +103,7 @@ class Unit:
         for name, value in module.pool(args).items():
             self.offsets["P_" + name] = len(self.pool)
             self.pool += value if isinstance(value, bytes) else floats(*value) if isinstance(value, tuple) else floats(value)
-        self.addr, self.data = {}, []                        # embedded data: name -> address; (segment, offset, bytes)
+        self.addr, self.data = {}, []                        # embedded data: name -> address; (segment, offset, bytes, extracts)
         self.far = False                                     # its code is in the segment FAR_CODE, not in the cave
 
     def embed(self, segments):
@@ -108,8 +112,9 @@ class Unit:
             blob = segments[key]
             blob.extend(bytes(-len(blob) % 16))
             self.addr[name] = SEGMENTS[key][1] + len(blob)
-            self.data.append((key, len(blob), make(self.addr[name])))
-            blob.extend(self.data[-1][2])
+            data, extracts = flatten(make(self.addr[name]))
+            self.data.append((key, len(blob), data, extracts))
+            blob.extend(data)
 
     def assemble(self, base, exports):
         """Assemble the parts at base, the constants behind them. exports: the labels of shared
@@ -214,15 +219,20 @@ def elf_frame(elf, segments, far):
 
 
 def make_patch(unit, order, elf, units, common, cave_off, placed, segments):
-    """Everything one mod changes, as patch.py takes it."""
-    records, size = dict(common), 0
+    """Everything one mod changes, as patch.py takes it: no byte of the game, RC2's data named
+    and left as zeros."""
+    records, fills, size = dict(common), [], 0
     for part in [unit] + [units[module.NAME] for module in unit.uses]:
         if not part.far:
             records[cave_off(part.base)] = part.code + bytes(part.pool)
-        for key, offset, blob in part.data:
+        for key, offset, blob, extracts in part.data:
             seg_off, headers = placed[key]
             records.update(headers)
-            records[seg_off + offset] = blob
+            blob = bytearray(blob)
+            for at, piece in extracts:
+                blob[at:at + len(piece)] = bytes(len(piece))
+                fills.append((seg_off + offset + at, piece.name, piece.args, len(piece), piece.sha256))
+            records[seg_off + offset] = bytes(blob)
             size = max(size, seg_off + len(segments[key]))
     words = unit.module.words(unit.args, unit.addr) if hasattr(unit.module, "words") else {}
     for va, (old, new) in words.items():
@@ -233,9 +243,21 @@ def make_patch(unit, order, elf, units, common, cave_off, placed, segments):
     for hook in unit.hooks:
         slot = unit.label(hook.label + "_next") if hook.chain else 0
         fallback = 0 if not hook.chain else hook.original if hook.call else unit.label(hook.label + "_orig")
-        hooks.append(patcher.Hook(elf.off(hook.site), hook.site, elf.u32(hook.site), unit.label(hook.label),
+        hooks.append(patcher.Hook(elf.off(hook.site), hook.site, unit.label(hook.label),
                                   cave_off(slot) if slot else 0, slot, fallback, int(not hook.jump)))
-    return patcher.Patch(unit.name, unit.module.TITLE, unit.module.ABOUT, order, elf.data, sorted(records.items()), hooks, size)
+    return patcher.Patch(unit.name, unit.module.TITLE, unit.module.ABOUT, order, hashlib.md5(elf.data).digest(),
+                         len(elf.data), sorted(records.items()), fills, hooks, size)
+
+
+def undo(data, source, patches):
+    """data with every byte these mods write put back from source, cut to its size."""
+    out = bytearray(data)
+    for patch in patches:
+        for offset, new in patch.records:
+            out[offset:offset + len(new)] = source[offset:offset + len(new)].ljust(len(new), b"\0")
+        for hook in patch.hooks:
+            out[hook.site_off:hook.site_off + 4] = source[hook.site_off:hook.site_off + 4]
+    return bytes(out[:len(source)])
 
 
 def parse_args():
@@ -284,7 +306,7 @@ def build(args, elf):
             far.extend(bytes(-len(far) % 16))
             unit.far = True
             unit.assemble(SEGMENTS[FAR_CODE][1] + len(far), exports)
-            unit.data.append((FAR_CODE, len(far), unit.code + bytes(unit.pool)))
+            unit.data.append((FAR_CODE, len(far), unit.code + bytes(unit.pool), []))
             far.extend(unit.data[-1][2])
         else:
             base = unit.end
@@ -303,12 +325,12 @@ def main():
     units, patches = build(args, elf)
     chosen = [patch for patch in patches if patch.name in args.mods]
     try:
-        out = patcher.link(elf.data, chosen)
-        patcher.link(elf.data, patches)                      # the patch files must go together as well
+        out = patcher.link(elf.data, chosen, rc2_source())
+        patcher.link(elf.data, patches, rc2_source())        # the patch files must go together as well
     except ValueError as error:
         sys.exit(str(error))
-    if patcher.restore(out, patches) != elf.data:
-        sys.exit("the build cannot be taken back to the original: a mod writes outside its records")
+    if undo(out, elf.data, patches) != elf.data:
+        sys.exit("a mod writes outside its records")
 
     end = max(unit.end for unit in units.values() if not unit.far)
     for unit in units.values():

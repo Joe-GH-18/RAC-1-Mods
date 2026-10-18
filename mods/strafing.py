@@ -25,7 +25,7 @@ Ratchet speeds up and slows down on the ground as in RC2: 18 and 20 units/s^2 in
 Not ported: RC2's reads of the timer in 0x82e4b0 (speed bookkeeping), 0x817c68 (a counter of
 strafing frames), 0x812e28 (resets hero +0x1e8) and 0x819898 (first-person mode sets the timer).
 """
-from .assets import rc2_animation
+from .rc2 import Extract
 from .game import *  # noqa: F401,F403
 
 NAME = "strafing"
@@ -826,7 +826,7 @@ def words(args, addr):
 
 
 def data(args):
-    return [("ro", "back_anim", lambda vaddr: rc2_animation(RC2_BACK_ANIM, vaddr))]
+    return [("ro", "back_anim", lambda vaddr: [Extract("animation", RC2_BACK_ANIM, vaddr)])]
 
 
 def pool(args):

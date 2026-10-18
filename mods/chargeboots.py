@@ -42,8 +42,10 @@ import struct
 import sys
 
 from . import sweep
-from .assets import asset, rc2_animation, rc2_sound_bank
+from .rc2 import Extract
 from .game import *  # noqa: F401,F403
+
+ART = os.path.join(os.path.dirname(os.path.abspath(__file__)), "art")
 
 NAME = "chargeboots"
 TITLE = "Charge Boots"
@@ -136,11 +138,9 @@ ANIM_BLEND = -2.0
 # A cut-down copy of that level bank (all sound entries kept, only these two sounds' sample
 # data) is embedded and loaded with the library's load-from-memory call, which the game's own
 # loader wrapper 0x505b30 uses too. The loader relocates the bank in place, so it sits in a
-# writable segment, with the two definitions, already carrying the mapped indices, in front.
+# writable segment, with the two definitions, already carrying the mapped indices, in front
+# (rc2data.charge_sounds, taken from the player's RC2).
 # RC2 0x82e9f4 starts the loop again whenever its voice has ended or been taken over.
-SOUND_BANK_LEVEL = 5
-SOUND_DEFS = (bytes.fromhex("00000000000000000000000000000000000000000000000000000000" "00000000"),   # loop -> sound 24
-              bytes.fromhex("00000000000000000000000000000000000000000000000000000000" "00000000"))   # end -> sound 20
 SOUND_LOOP_FLAGS = 4
 SOUND_BANK_OFF = 0x40          # bank offset inside the segment; must be 16-byte aligned
 BANK_LOAD_FROM_MEM = 0x60AE8C  # (r3 bank image) -> handle, 0 on failure
@@ -219,7 +219,6 @@ MAIN_HEAP, GRAPHICS_HEAP = 0x90D7C8, 0x90D7EC   # +8 and +0xc: end of the heap
 GCM_PTR = 0x8FA564            # -> struct with +0x4ac graphics memory base
 LEVEL = 0xA15F4C              # +0x1c texture table of the loaded level
 BOOTS_RESERVE = 0x20000
-BOOTS_FILES = ("rc2_e70_model.bin", "rc2_e70_texentry.bin", "rc2_e70_texture.bin")
 ITEM_MAGNEBOOTS = 0x1C
 STATE_TYPE_GRIND = 0xF        # hero +0x208c
 FOOT_REMEMBERED = 0x969C80    # the item the foot slot is meant to hold (0x969c7c + 4 * slot)
@@ -252,7 +251,7 @@ PREVIEW_SPAWN_HOOK = 0x146008      # bl SPAWN for the preview's moby
 PLAY_MODEL_SOUND = 0x15D12C        # (r3 definition index, r4 flags, r5 moby)
 GRID_ENTRY_NEXT = 0x1453F0         # behind the drawing of one entry
 HUD = 0xA1BFC0
-ICON_FILES = ("charge_icon0.bin", "charge_icon1.bin")
+ICON_FILES = ("charge_icon0.bin", "charge_icon1.bin")   # mods/art/, drawn by tools/icon.py
 ICON_ENTRY = bytes.fromhex("00000000 00018829 00010303 80000000 0000aae4 02063e80 00400040 00100000 00ff0000")   # the Grindboots icon's, without its pixel offset
 MENU_FRAME_CLASS = 0x472
 FOOT_BOX_ANIM = 0x26
@@ -1502,45 +1501,40 @@ FRAME = FRAME.replace("{CAMERA_RESET}", "    lis 8, {CAMERA_HA}\n    addi 8, 8, 
     f"    stw 7, {off}(8)" for off in [off for off, _ in CAMERA_FIELDS] + list(CAMERA_TURN_FIELDS)))
 
 
-def charge_sound_bank():
-    """RC2's level sound bank cut down to the two charge sounds (see assets.rc2_sound_bank)."""
-    return rc2_sound_bank(SOUND_BANK_LEVEL, SOUND_DEFS, "rc2_charge_sounds.bin")
-
-
 @functools.lru_cache(None)
 def boots_data(vaddr):
-    """The embedded Charge Boots: model, texture entry, padding, pixels, the Foot Items table and
-    the menu strings, for the address vaddr; and the sizes and addresses the code needs."""
-    model, entry, pixels = (asset("boots", name) for name in BOOTS_FILES)
-    icons = [asset("boots", name) for name in ICON_FILES]
+    """The embedded Charge Boots: model, texture entry, padding, pixels (RC2's, then the menu
+    icons), the Foot Items table and the menu strings, for the address vaddr, as pieces (see
+    mods/rc2.py); and the sizes and addresses the code needs."""
+    model, entry, pixels = Extract("boots_model"), Extract("boots_texture_entry"), Extract("boots_pixels")
+    icons = [open(os.path.join(ART, name), "rb").read() for name in ICON_FILES]
     icon_pixels = len(pixels)                                # offset of the first icon from the boots' texture
     if icon_pixels % 0x80 or len({len(icon) for icon in icons}) != 1:
         sys.exit("icon textures do not line up")
-    pixels += b"".join(icons)
-    if len(model) % 16 or len(model) + len(entry) + 0x10 > BOOTS_RESERVE or len(pixels) > BOOTS_RESERVE:
+    pixel_size = len(pixels) + sum(map(len, icons))
+    if len(model) % 16 or len(model) + len(entry) + 0x10 > BOOTS_RESERVE or pixel_size > BOOTS_RESERVE:
         sys.exit("boots data does not fit its reservation")
-    model = bytearray(model)
-    mesh = struct.unpack_from(">I", model, 0)[0]
-    groups = struct.unpack_from(">I", model, mesh + 8)[0]
-    struct.pack_into(">I", model, groups, 0)             # texture ids: any valid one for the fix-up,
-    struct.pack_into(">I", model, groups + 0x10, 0)      # they are replaced by the entry afterwards
-    blob = bytes(model) + entry + bytes(-(len(model) + len(entry)) % 16)
-    pixels_at = vaddr + len(blob)
-    blob += pixels + bytes(-len(pixels) % 16)
-    foot_table = vaddr + len(blob)
+    pieces = [model, entry, bytes(-(len(model) + len(entry)) % 16)]
+    size = len(model) + len(entry) + len(pieces[-1])
+    pixels_at = vaddr + size
+    pieces += [pixels, *icons, bytes(-pixel_size % 16)]
+    size += pixel_size + len(pieces[-1])
+    blob = bytearray()                                       # the mod's own tables behind them
+    tables = vaddr + size
+    foot_table = tables + len(blob)
     items = (ITEM_GRINDBOOTS, ITEM_MAGNEBOOTS, ITEM_GRINDBOOTS)      # the third entry is the Charge Boots
     blob += b"".join(struct.pack(">5H", icon, 0, 0, item, 0) for icon, item in zip(FOOT_ICONS, items))
     charge_entry = foot_table + 10 * (len(items) - 1)
-    name = vaddr + len(blob)
+    name = tables + len(blob)
     blob += CHARGE_NAME + b"\0"
-    text = vaddr + len(blob)
+    text = tables + len(blob)
     blob += CHARGE_HELP + b"\0"
     blob += bytes(-len(blob) % 4)
-    icon_entries = vaddr + len(blob)                   # one texture entry per icon version
+    icon_entries = tables + len(blob)                  # one texture entry per icon version
     blob += ICON_ENTRY * len(icons)
-    icon_slots = vaddr + len(blob)                     # room for both entries at any of 0x24 offsets
+    icon_slots = tables + len(blob)                    # room for both entries at any of 0x24 offsets
     blob += bytes(len(ICON_ENTRY) * (len(icons) + 1))
-    return blob, dict(
+    return pieces + [bytes(blob)], dict(
         FOOT_TABLE=foot_table, FOOT_COLUMNS=len(items), CHARGE_ENTRY_HI=charge_entry >> 16, CHARGE_ENTRY_LO=charge_entry & 0xFFFF,
         CHARGE_NAME_HA=ha(name), CHARGE_NAME_LO=lo(name), CHARGE_HELP_HA=ha(text), CHARGE_HELP_LO=lo(text),
         ICON_ENTRIES_HA=ha(icon_entries), ICON_ENTRIES_LO=lo(icon_entries),
@@ -1549,7 +1543,7 @@ def boots_data(vaddr):
         MODEL_AND_ENTRY_HI=(len(model) + len(entry)) >> 16, MODEL_AND_ENTRY_LO=(len(model) + len(entry)) & 0xFFFF,
         MODEL_SIZE_HI=len(model) >> 16, MODEL_SIZE_LO=len(model) & 0xFFFF,
         PIXELS_HA=ha(pixels_at), PIXELS_LO=lo(pixels_at),
-        PIXELS_SIZE_HI=len(pixels) >> 16, PIXELS_SIZE_LO=len(pixels) & 0xFFFF)
+        PIXELS_SIZE_HI=pixel_size >> 16, PIXELS_SIZE_LO=pixel_size & 0xFFFF)
 
 
 def options(ap):
@@ -1581,8 +1575,8 @@ def words(args, addr):
 
 
 def data(args):
-    return [("ro", "anim", lambda vaddr: rc2_animation(RC2_CHARGE_ANIM, vaddr)),
-            ("rw", "sound", lambda vaddr: SOUND_DEFS[0] + SOUND_DEFS[1] + charge_sound_bank()),
+    return [("ro", "anim", lambda vaddr: [Extract("animation", RC2_CHARGE_ANIM, vaddr)]),
+            ("rw", "sound", lambda vaddr: [Extract("charge_sounds")]),
             ("rw2", "boots", lambda vaddr: boots_data(vaddr)[0])]
 
 

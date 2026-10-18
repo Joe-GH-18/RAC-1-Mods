@@ -5,7 +5,7 @@ The game's item icons come in two versions: a black shape for an item that is no
 white one for the item worn. The background is taken from the Grindboots icon
 (build/assets/icons/grindboots{0,1}.png, decoded from level1/vram.ps3 at 0xcc080 and 0xcd080):
 a plane is fitted to its red pixels per colour channel. Needs Pillow (system python3 has it).
-Writes build/assets/boots/charge_icon{0,1}.bin and a preview, build/assets/icons/charge_boots.png.
+Writes mods/art/charge_icon{0,1}.bin and a preview, build/assets/icons/charge_boots.png.
 """
 import os
 
@@ -13,7 +13,8 @@ from PIL import Image, ImageDraw
 
 from dxt import decode, encode
 
-ASSETS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "build", "assets")
+ASSETS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "build", "assets")   # extracted game files (not in the repository)
+ART = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "mods", "art")
 SIZE, SCALE = 64, 8
 
 # Shapes in icon pixels: a boot seen from the side, toe to the right, hovering over a ground
@@ -58,7 +59,7 @@ def main():
         icon = background(reference)
         icon.paste(Image.new("RGBA", (SIZE, SIZE), colour), (0, 0), mask)
         data = encode([[icon.getpixel((x, y)) for x in range(SIZE)] for y in range(SIZE)])
-        with open(os.path.join(ASSETS, "boots", f"charge_icon{version}.bin"), "wb") as f:
+        with open(os.path.join(ART, f"charge_icon{version}.bin"), "wb") as f:
             f.write(data)
         shown = Image.new("RGBA", (SIZE, SIZE))
         shown.putdata([p for row in decode(data, SIZE, SIZE) for p in row])      # as the game will show it

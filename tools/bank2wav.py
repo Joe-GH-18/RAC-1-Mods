@@ -2,7 +2,7 @@
 """bank2wav.py <sound.bnk> <folder>: write every sound of a sound bank as <folder>/sNNN.wav, to listen through.
 
 NNN is the sound's index in the bank (what a model sound definition carries at +0x1a once the
-level is loaded). The bank's layout is described in mods/assets.py (rc2_sound_bank); it is a
+level is loaded). The bank's layout is described in rc2data.py (sound_bank); it is a
 bank of Sony's SCREAM library. A sound is a list of grains, 8 bytes each: type << 24 | offset of
 its data, then the ticks (1/240 s) to wait behind it. A tone grain (type 1) starts a sample:
 +1 volume, +2/+3 centre note and fine, +0x10/+0x14 the sample; it is played at note 60, which
