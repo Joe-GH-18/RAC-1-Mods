@@ -20,12 +20,14 @@ The weapon is taken to be the one in his hand, so a kill by something left behin
 agent of doom, a drone) counts for whatever he holds when it happens. The Decoy Glove, which
 kills nothing, also gets every kill made while one of its decoys stands (DECOY_HOOK), and the Drone
 Device every kill made while its drones are out (DRONE_HOOK), since he holds the wrench then.
+The Taunter gets every kill of an enemy it lured; its second level stuns them when they reach
+Ratchet (see TAUNTER).
 
 Where it is kept: the game's save is the table of memory blocks at 0x726690 {address, size,
 id}, and a save whose sizes do not add up to the table's is refused (0xe6fe4), so the table is
 left alone. The experience is 16 bits per weapon in the saved ammunition array (AMMO, one int
 per item id), in the ints of the items that are never in his hand and have no ammunition:
-item 0 and the back packs and helmets 2 to 7. 0xffff there is level 2 for the four weapons
+items 0 and 1 (Clank) and the back packs and helmets 2 to 7. 0xffff there is level 2 for the five weapons
 without a gold version. A new game clears the array, and with it the levels; the gold versions
 are the game's own and are saved by it.
 
@@ -38,7 +40,7 @@ What shows it:
     rectangles drawn with the game's FILL_RECT, as its own slider 0xd1df4 does: a background
     and the experience as a share of what is needed, or all of it in another colour at level 2.
   * A message when a weapon gets there, through the game's help message SHOW_MESSAGE: for a
-    gold version the game's own text "You got the Gold ...!", for the other four a text of this
+    gold version the game's own text "You got the Gold ...!", for the other five a text of this
     mod. The message code takes its text from the text table by id, so for those the string of
     one table entry (BORROWED_TEXT, "Gold Weapon purchase", which appears twice in the table)
     is pointed at the mod's text first.
@@ -47,9 +49,9 @@ What shows it:
     Ratchet glows, a burst of gold puffs goes off around the weapon and gold smoke rises from
     it, a sound plays, and the weapon is filled up, as RC2 does at an upgrade.
   * The icon of a level 2 weapon is gold: in the HUD in play for all of them, and on the tiles
-    of the QuickSelect and of the pause menu's grids for the four without a gold version, where
+    of the QuickSelect and of the pause menu's grids for the five without a gold version, where
     the game has gold tiles of its own for the others (TINT_HOOK, MENU_TINT_HOOK).
-  * The four weapons without a gold version are gold in his hand and in the menus' models (WEAPON_TINT) and
+  * The five weapons without a gold version are gold in his hand and in the menus' models (WEAPON_TINT) and
     are called "Gold ..." wherever the game writes their name (GOLD_NAME_HOOK), as the game's
     gold versions are.
 
@@ -65,7 +67,8 @@ TITLE = "Weapon levels"
 ABOUT = ("Weapons collect experience from the enemies they kill and reach a second level once: the game's gold version "
          "where it has one, three rockets a shot for the R.Y.N.O., twice the damage for the Visibomb Gun, Walloper and "
          "Drone Device, a twice as large blast for the Visibomb, twice as many gold drones for the Drone Device and a longer reach and lunge with red sparks for the "
-         "Walloper. A level 2 weapon draws bolts in; a bar in the HUD and the pause menu shows the experience, and at "
+         "Walloper. The Taunter collects what its lured enemies are worth, and at level 2 they stand stunned when they reach "
+         "Ratchet. A level 2 weapon draws bolts in; a bar in the HUD and the pause menu shows the experience, and at "
          "the second level the weapon, its icon and its name are gold.")
 
 GOLD = 0x969CA8                # byte per item id: the gold version is owned (save block 0x1e, 0x28 bytes)
@@ -108,6 +111,36 @@ DRONE_CAP, DRONE_CAP_L2 = 6, 12
 BOSS_SNAGGLEBEAST, BOSS_MUTANT = 0x452, 0x41B
 DRONE_HOOK = 0x39B3C4          # ori r31, r3, 0
 DRONE_HOOK_WORD = 0x607F0000
+# The Taunter (the user's wish, 2026-10-18) kills nothing itself either; it gets what dies of the
+# enemies it lured. Its moby (class 0xaf, update 0x2b1300) calls the lure 0x2b06f0(f1 radius,
+# r4 its moby) as it whistles: for every moby of the list 0xa49344 with an AI record (moby +0x78
+# -> +0, as 0xfcccc reads it) in reach and in front of it, the record's +0x18 becomes the
+# Taunter's moby (stored at the two LURE_HOOKS, r27 the enemy). (Before that it breaks the crates
+# within 12 units.) Who reads +0x18 differs by enemy, so the mod keeps its own table of the lured
+# (state +LURES): a lured enemy that dies within LURE_FRAMES counts for the Taunter.
+# Level 2, the user's pick: a lured enemy that comes within STUN_ARRIVE of Ratchet stands stunned
+# for STUN_FRAMES. The moby loop 0xfc238 runs each moby's animation (MOBY_ANIM, unless moby +0x34
+# has 0x40) and its update (the descriptor at +0x74); a stunned enemy gets neither, so it stands
+# in its pose, with gold puffs above it (DAZE). An enemy only takes its damage in its own update,
+# so a hit ends the stun: DEAL_DAMAGE writes the ring entry's index into moby +0xa4. It can be
+# stunned again by a lure STUN_COOLDOWN after a stun ends.
+TAUNTER = 0x0E
+LURE_HOOKS = (0x2B0D64, 0x2B0D70)      # stw r31, 0x18(r26)
+LURE_HOOK_WORD = 0x93FA0018
+MOBY_UPDATE_HOOK = 0xFC2E0     # lwz r3, 0x74(r31) in the moby loop (r31 = the moby)
+MOBY_UPDATE_HOOK_WORD = 0x807F0074
+MOBY_ANIM_HOOK = 0xFC2D8       # bl MOBY_ANIM (r3 = the moby)
+MOBY_ANIM = 0xF98D8
+# The table: LURE_COUNT entries of LURE_SIZE bytes, {+0 moby (0 = free), +4 its class (u16), +6
+# its moby +0xa4 when the stun began (byte), +8 the frame it was last lured in, +0xc the frame its
+# stun ends in (0 = not stunned since it was lured)}.
+LURES, LURE_COUNT, LURE_SIZE = 0x1A0, 16, 16
+LURE_FRAMES = 900              # 15 s
+STUN_FRAMES = 180
+STUN_ARRIVE = 14.0             # lured enemies stop short of him (a robot at 11, seen in game); 5 never stunned
+STUN_COOLDOWN = 120
+DAZE = ((0.0, 0.0, 1.5), (0.0, 0.0, 0.03), 400000.0, 0.08, (0x0820C8FF, 0x0520B8FF), (20, 25), 1)
+FX_DAZE, FX_STUN_FRAMES, FX_ARRIVE, FX_STUN_COOLDOWN, FX_LURE_FRAMES = 0xB0, 0xE8, 0xEC, 0xF0, 0xF4
 # Both writers of the damage ring are leaf functions that never save their return address, so
 # these two hooks are jumps: each routine stores the damage itself and jumps back.
 DAMAGE_HOOK = 0x105C78         # stfs f1, 0x2c(r4) in DEAL_DAMAGE (r3 target, r12 flags)
@@ -124,6 +157,7 @@ XP_NEEDED = {
     0x0A: 1500,     # Bomb Glove
     0x0B: 5000,     # Devastator
     0x0D: 7500,     # Visibomb Gun
+    0x0E: 1500,     # Taunter
     0x0F: 1500,     # Blaster
     0x10: 1500,     # Pyrocitor
     0x11: 3750,     # Mine Glove
@@ -135,9 +169,12 @@ XP_NEEDED = {
     0x18: 3750,     # Drone Device
     0x19: 6250,     # Decoy Glove
 }
-BOOSTED = {0x0D: "Visibomb Gun", 0x12: "Walloper", 0x17: "R.Y.N.O.", 0x18: "Drone Device"}   # the weapons without a gold version
+BOOSTED = {0x0D: "Visibomb Gun", 0x0E: "Taunter", 0x12: "Walloper", 0x17: "R.Y.N.O.", 0x18: "Drone Device"}   # the weapons without a gold version
 BOOST = 2.0
-XP_ITEMS = (0, 2, 3, 4, 5, 6, 7)       # the items whose ammunition ints hold the experience, two weapons each
+XP_ITEMS = (0, 2, 3, 4, 5, 6, 7, 1)    # the items whose ammunition ints hold the experience, two weapons each
+# Weapons added after the first release take the places behind the others' (item 1, the Clank on
+# his back, is no more held, sold or picked up than 2 to 7), so a save keeps every weapon's experience.
+XP_LATER = (0x0E,)
 NO_WEAPON = 0xFF
 # Of those, the weapons whose second level is BOOST times the damage. The R.Y.N.O. has a second
 # level of its own instead: its update 0x3892e8 launches each rocket with ROCKET(weapon moby,
@@ -331,6 +368,8 @@ MENU_XP_HEIGHT_HALF = MENU_XP_HEIGHT // 2
 #   +0x98 frames and +0x9c strength of the camera shake
 #   +0xa0 frames and +0xa4 alpha at the start of the flash of the whole screen
 #   +0xa8/+0xac kept while it runs: the weapon whose colour is not the mod's, and that colour
+#   +0xb0 a third set, DAZE, above every enemy the Taunter has stunned (a frame each), then
+#   +0xe8 STUN_FRAMES, +0xec STUN_ARRIVE (float), +0xf0 STUN_COOLDOWN, +0xf4 LURE_FRAMES
 # The puffs are the game's own, the ones a breaking crate gives off:
 # PUFF(position, velocity, colour AABBGGRR, second colour, -, frames, second frame count, -, 0, 0;
 # f1, f2 = how far the velocity is scattered) makes one particle (type 0xb), or none in a frame
@@ -359,7 +398,7 @@ ITEM_AMMO = 0x737D30                   # 24 bytes per item: +0xe what it holds
 TEXT_LOOKUP = 0x7B740
 TEXT_LOOKUP_WORD = 0x3CA00097  # lis r5, 0x97, its first instruction
 TEXT_LOOKUP_BACK = TEXT_LOOKUP + 4
-NAME_TEXT = {0x0D: 0x4E50, 0x12: 0x4E45, 0x17: 0x4E4E, 0x18: 0x4E42}   # item table +0
+NAME_TEXT = {0x0D: 0x4E50, 0x0E: 0x4E51, 0x12: 0x4E45, 0x17: 0x4E4E, 0x18: 0x4E42}   # item table +0
 NAME_PREFIX = b"Gold "
 NAME_SIZE = 48
 BOLT_FLY = 2                   # spawn_bolts flag: the bolts fly to Ratchet at once
@@ -406,18 +445,43 @@ xp_held:
     bl xp_award
 xp_decoy:                           # a decoy is standing: the Decoy Glove gets the same, whatever killed it
     cmpwi 30, {DECOY_GLOVE}
-    beq xp_drone
+    beq xp_taunt
     lis 9, {STATE_HA}
     addi 9, 9, {STATE_LO}
     lwz 8, 0x134(9)
     cmpwi 8, 0
-    beq xp_drone
+    beq xp_taunt
     lis 10, {FRAME_COUNTER_HA}
     lwz 10, {FRAME_COUNTER_LO}(10)
     subf 10, 8, 10
     cmplwi 10, {DECOY_FRAMES}
-    bgt xp_drone
+    bgt xp_taunt
     li 30, {DECOY_GLOVE}
+    bl xp_award
+xp_taunt:                           # it was lured: the Taunter gets the same, unless it is in his hand
+    mr 3, 31
+    bl lure_find
+    cmpwi 12, 0
+    beq xp_drone
+    lwz 8, 8(12)
+    li 9, 0                         # the entry is free again
+    stw 9, 0(12)
+    stw 9, 8(12)
+    stw 9, 0xc(12)
+    lis 10, {FRAME_COUNTER_HA}
+    lwz 10, {FRAME_COUNTER_LO}(10)
+    subf 10, 8, 10
+    lis 9, {FX_HA}
+    addi 9, 9, {FX_LO}
+    lwz 9, {FX_LURE_FRAMES}(9)
+    cmplw 10, 9
+    bgt xp_drone
+    lis 9, {HERO_HA}
+    addi 9, 9, {HERO_LO}
+    lwz 8, {HAND_ITEM}(9)
+    cmpwi 8, {TAUNTER}
+    beq xp_drone
+    li 30, {TAUNTER}
     bl xp_award
 xp_drone:                           # drones are out: the Drone Device gets it, unless it is in his hand
     lis 9, {HERO_HA}
@@ -1549,6 +1613,7 @@ fx_tick:
     stw 0, 0x94(28)
     bl celebrate
 fx_run:
+    bl daze_tick
     lwz 9, 0x15c(31)
     cmpwi 9, 0
     ble fx_out
@@ -1756,6 +1821,228 @@ BOLT_BURST = """
 """
 
 
+# The Taunter. lure_find(r3 a moby) -> r12 its entry in the lure table or 0 (uses r9 to r11 and the
+#   CTR). taunt_lure: replaces stw r31, 0x18(r26) in the lure (r27 = the enemy; r3 to r12 are free).
+# stun_check(r3 a moby) -> r12 = 1 while it is stunned, and starts the stun of a lured enemy that
+#   has come close (uses r7 to r11, f0 to f2 and the CTR, not r0 or r3). moby_update: replaces lwz
+#   r3, 0x74(r31) in the moby loop (r31 = the moby; 0 there skips the update); moby_anim: replaces
+#   bl MOBY_ANIM (r3 = the moby).
+# daze_tick: from fx_tick (r28 = FX, r31 = state): gold puffs above the stunned, and the entries
+#   of enemies lured long ago are freed.
+TAUNT = """
+lure_find:
+    lis 12, {STATE_HA}
+    addi 12, 12, {STATE_LO}
+    addi 12, 12, {LURES}
+    li 11, {LURE_COUNT}
+    mtctr 11
+    lhz 10, 0xa6(3)
+lf_next:
+    lwz 9, 0(12)
+    cmpw 9, 3
+    bne lf_skip
+    lhz 9, 4(12)
+    cmpw 9, 10
+    beqlr
+lf_skip:
+    addi 12, 12, {LURE_SIZE}
+    bdnz lf_next
+    li 12, 0
+    blr
+
+taunt_lure:
+    stw 31, 0x18(26)                # the displaced instruction
+    mflr 0
+    mr 3, 27
+    bl lure_find
+    mtlr 0
+    lis 11, {FRAME_COUNTER_HA}
+    lwz 11, {FRAME_COUNTER_LO}(11)
+    cmpwi 12, 0
+    bne tl_known
+    lis 10, {STATE_HA}              # a new one takes the entry lured longest ago (a free one: never)
+    addi 10, 10, {STATE_LO}
+    addi 10, 10, {LURES}
+    mr 12, 10
+    li 7, 0
+    li 9, {LURE_COUNT}
+    mtctr 9
+tl_oldest:
+    lwz 9, 8(10)
+    subf 9, 9, 11
+    cmplw 9, 7
+    ble tl_older
+    mr 7, 9
+    mr 12, 10
+tl_older:
+    addi 10, 10, {LURE_SIZE}
+    bdnz tl_oldest
+    stw 27, 0(12)
+    lhz 9, 0xa6(27)
+    sth 9, 4(12)
+    li 9, 0
+    stw 9, 0xc(12)
+    b tl_stamp
+tl_known:                           # stunned before: again once STUN_COOLDOWN has passed since
+    lwz 9, 0xc(12)
+    cmpwi 9, 0
+    beq tl_stamp
+    subf 9, 9, 11
+    lis 10, {FX_HA}
+    addi 10, 10, {FX_LO}
+    lwz 10, {FX_STUN_COOLDOWN}(10)
+    cmpw 9, 10
+    blt tl_stamp
+    li 9, 0
+    stw 9, 0xc(12)
+tl_stamp:
+    stw 11, 8(12)
+    blr
+
+stun_check:
+    mflr 8
+    bl lure_find
+    mtlr 8
+    cmpwi 12, 0
+    beqlr
+    mr 7, 12
+    lis 11, {FRAME_COUNTER_HA}
+    lwz 11, {FRAME_COUNTER_LO}(11)
+    lwz 9, 0xc(7)
+    cmpwi 9, 0
+    beq sc_arrive
+    subf 9, 11, 9                   # frames of the stun left
+    cmpwi 9, 0
+    ble sc_no
+    lbz 9, 0xa4(3)                  # a hit ends it
+    lbz 10, 6(7)
+    cmpw 9, 10
+    beq sc_yes
+    stw 11, 0xc(7)
+    b sc_no
+sc_arrive:
+    lwz 9, 8(7)
+    subf 9, 9, 11
+    lis 10, {FX_HA}
+    addi 10, 10, {FX_LO}
+    lwz 10, {FX_LURE_FRAMES}(10)
+    cmplw 9, 10
+    bgt sc_no
+    li 10, {TAUNTER}
+@LEVEL2 sc_no@
+    lis 9, {HERO_HA}
+    addi 9, 9, {HERO_LO}
+    lfs 0, 0x80(9)
+    lfs 1, 0x10(3)
+    fsubs 0, 0, 1
+    fmuls 0, 0, 0
+    lfs 1, 0x84(9)
+    lfs 2, 0x14(3)
+    fsubs 1, 1, 2
+    fmadds 0, 1, 1, 0
+    lfs 1, 0x88(9)
+    lfs 2, 0x18(3)
+    fsubs 1, 1, 2
+    fmadds 0, 1, 1, 0
+    lis 10, {FX_HA}
+    addi 10, 10, {FX_LO}
+    lfs 1, {FX_ARRIVE}(10)
+    fmuls 1, 1, 1
+    fcmpu 0, 0, 1
+    bge sc_no
+    lwz 9, {FX_STUN_FRAMES}(10)
+    lis 11, {FRAME_COUNTER_HA}
+    lwz 11, {FRAME_COUNTER_LO}(11)
+    add 9, 11, 9
+    stw 9, 0xc(7)
+    lbz 9, 0xa4(3)
+    stb 9, 6(7)
+sc_yes:
+    li 12, 1
+    blr
+sc_no:
+    li 12, 0
+    blr
+
+moby_update:
+    mflr 0
+    mr 3, 31
+    bl stun_check
+    mtlr 0
+    li 3, 0
+    cmpwi 12, 0
+    bnelr
+    lwz 3, 0x74(31)                 # the displaced instruction
+    blr
+
+moby_anim:
+    mflr 0
+    bl stun_check
+    mtlr 0
+    cmpwi 12, 0
+    bnelr
+    b {MOBY_ANIM}
+
+daze_tick:
+    mflr 0
+    std 0, 0x10(1)
+    stdu 1, -0x90(1)
+    std 30, 0x70(1)
+    std 27, 0x78(1)
+    std 26, 0x80(1)
+    addi 26, 31, {LURES}
+    li 27, {LURE_COUNT}
+dz_next:
+    lwz 30, 0(26)
+    cmpwi 30, 0
+    beq dz_skip
+    lis 11, {FRAME_COUNTER_HA}
+    lwz 11, {FRAME_COUNTER_LO}(11)
+    lwz 9, 8(26)                    # lured in the future: the level's frame count started again
+    subf 9, 9, 11
+    cmpwi 9, 0
+    blt dz_free
+    lwz 9, 0xc(26)
+    cmpwi 9, 0
+    beq dz_old
+    subf 10, 11, 9
+    cmpwi 10, 0
+    ble dz_old
+    lhz 9, 0xa6(30)                 # its moby went to another
+    lhz 10, 4(26)
+    cmpw 9, 10
+    bne dz_free
+    addi 3, 28, {FX_DAZE}
+    bl puffs
+    b dz_skip
+dz_old:                             # lured long ago, and not stunned: the entry is free again
+    lwz 9, 8(26)
+    subf 9, 9, 11
+    lwz 10, {FX_LURE_FRAMES}(28)
+    lwz 8, {FX_STUN_COOLDOWN}(28)
+    add 10, 10, 8
+    cmplw 9, 10
+    ble dz_skip
+dz_free:
+    li 9, 0
+    stw 9, 0(26)
+    stw 9, 8(26)
+    stw 9, 0xc(26)
+dz_skip:
+    addi 26, 26, {LURE_SIZE}
+    addi 27, 27, -1
+    cmpwi 27, 0
+    bgt dz_next
+    ld 26, 0x80(1)
+    ld 27, 0x78(1)
+    ld 30, 0x70(1)
+    addi 1, 1, 0x90
+    ld 0, 0x10(1)
+    mtlr 0
+    blr
+"""
+
+
 def damage_part(name, flags, entry, back):
     return DAMAGE.replace("@NAME@", name).replace("@FLAGS@", flags).replace("@ENTRY@", entry).replace("@BACK@", back)
 
@@ -1769,6 +2056,8 @@ def options(ap):
 def hooks(args):
     return [Hook(KILL_HOOK, "xp_kill", KILL_HOOK_WORD), Hook(DECOY_HOOK, "decoy_seen", DECOY_HOOK_WORD),
             Hook(DRONE_HOOK, "drone_seen", DRONE_HOOK_WORD),
+            *(Hook(site, "taunt_lure", LURE_HOOK_WORD) for site in LURE_HOOKS),
+            Hook(MOBY_UPDATE_HOOK, "moby_update", MOBY_UPDATE_HOOK_WORD), Hook(MOBY_ANIM_HOOK, "moby_anim", MOBY_ANIM),
             *(Hook(site, label, word) for site, word, label in DRONE_CAP_HOOKS),
             Hook(DAMAGE_HOOK, "damage", DAMAGE_HOOK_WORD, jump=True),
             Hook(SWEEP_DAMAGE_HOOK, "sweep_damage", SWEEP_DAMAGE_HOOK_WORD, jump=True),
@@ -1796,15 +2085,21 @@ def xp_offsets():
     places = [4 * item + half for item in XP_ITEMS for half in (0, 2)]
     if len(places) < len(XP_NEEDED):
         raise SystemExit("weaponlevels: more weapons than places for their experience")
-    return dict(zip(sorted(XP_NEEDED), places))
+    return dict(zip(sorted(XP_NEEDED, key=lambda item: (item in XP_LATER, item)), places))
 
 
 def data(args):
     def fx(vaddr):
-        sets = b"".join(struct.pack(PUFFS, *at, *rise, 0.0, f1, scatter, *colours, *life, count)
-                        for at, rise, f1, scatter, colours, life, count in (SMOKE, BURST))
-        return sets + struct.pack(">2i2I4i2Iif2i2I", LEVELUP_FRAMES, *WEAPON_FLASH, *HERO_GLOW, *SOUNDS, 0, 0, *SHAKE,
-                                  FLASH_FRAMES, FLASH_ALPHA, 0, 0)
+        def puffs(at, rise, f1, scatter, colours, life, count):
+            return struct.pack(PUFFS, *at, *rise, 0.0, f1, scatter, *colours, *life, count)
+
+        block = (puffs(*SMOKE) + puffs(*BURST)
+                 + struct.pack(">2i2I4i2Iif2i2I", LEVELUP_FRAMES, *WEAPON_FLASH, *HERO_GLOW, *SOUNDS, 0, 0, *SHAKE,
+                               FLASH_FRAMES, FLASH_ALPHA, 0, 0))
+        assert len(block) == FX_DAZE
+        block += puffs(*DAZE)
+        assert len(block) == FX_STUN_FRAMES
+        return block + struct.pack(">ifii", STUN_FRAMES, STUN_ARRIVE, STUN_COOLDOWN, LURE_FRAMES)
 
     return [("rw", "names", lambda vaddr: NAME_PREFIX.ljust(NAME_SIZE, b"\0") * len(NAME_TEXT)), ("rw", "fx", fx)]
 
@@ -1831,7 +2126,7 @@ def pool(args):
 
 def parts(args):
     return [tuned(LEVELS), damage_part("damage", "12", "4", "DAMAGE_BACK"), damage_part("sweep_damage", "6", "8", "SWEEP_DAMAGE_BACK"),
-            tuned(BAR), tuned(PERKS), FX]
+            tuned(BAR), tuned(PERKS), FX, tuned(TAUNT)]
 
 
 def fields(args, addr):

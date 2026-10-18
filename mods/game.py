@@ -160,9 +160,10 @@ SEG_END = 0x700000
 #   Walloper's sparks (00BBGGRR), +0x180 added to the x of the experience in words in the menu,
 #   +0x184 how much taller the menu's ammunition box is (pose units), +0x188 the height the
 #   count is centred in, +0x18c the factor of a level 2 Visibomb's blast radius (float),
-#   +0x190 the frame in which a drone of the Drone Device was last seen
+#   +0x190 the frame in which a drone of the Drone Device was last seen,
+#   +0x1a0..+0x2a0 the enemies the Taunter lured (LURES in mods/weaponlevels.py)
 STATE = 0x1606320
-STATE_END = 0x1606480
+STATE_END = 0x16065C0
 
 # Data: what a mod embeds is loaded through the ELF's three unused PT_LOAD entries (program
 # header index, address). Each takes the data of all mods one after the other, 16-byte aligned:

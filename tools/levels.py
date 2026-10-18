@@ -23,7 +23,7 @@ from mods.weaponlevels import AMMO, GOLD, XP_NEEDED, xp_offsets     # noqa: E402
 
 UNLOCKED = 0x96C140            # byte per item id (save block of 0x25 bytes)
 ITEM_AMMO = 0x737D30           # rows of 24 bytes per item id: +0xe the u16 an item holds
-NAMES = {0x09: "Suck Cannon", 0x0A: "Bomb Glove", 0x0B: "Devastator", 0x0D: "Visibomb Gun", 0x0F: "Blaster",
+NAMES = {0x09: "Suck Cannon", 0x0A: "Bomb Glove", 0x0B: "Devastator", 0x0D: "Visibomb Gun", 0x0E: "Taunter", 0x0F: "Blaster",
          0x10: "Pyrocitor", 0x11: "Mine Glove", 0x12: "Walloper", 0x13: "Tesla Claw", 0x14: "Glove of Doom",
          0x15: "Morph-o-Ray", 0x17: "R.Y.N.O.", 0x18: "Drone Device", 0x19: "Decoy Glove"}
 AT = xp_offsets()
