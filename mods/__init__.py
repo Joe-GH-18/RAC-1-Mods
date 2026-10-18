@@ -21,8 +21,8 @@ and optionally
 Each mod gets its own stretch of the code area, whether it is built in or not, so every mod's patch
 file is the same whatever it is combined with.
 """
-from . import boxbreaker, chargeboots, clank, strafing, sweep, weaponlevels
+from . import boxbreaker, chargeboots, clank, goldenclank, strafing, sweep, weaponlevels
 
 LIBRARIES = (sweep,)
 # The order in which mods that hook the same instruction run there.
-MODS = (boxbreaker, strafing, clank, chargeboots, weaponlevels)
+MODS = (boxbreaker, strafing, clank, chargeboots, weaponlevels, goldenclank)

@@ -86,6 +86,18 @@ MODEL_TABLE = 0xA34C00     # model pointer per slot
 PLAY_SOUND_DEF = 0x15CE18  # (r3 definition, r4 flags, r5 moby, r6 = 0, r7 = 0x400) -> voice slot or -1
 PLAY_MODEL_SOUND = 0x15D12C  # (r3 definition index, r4 flags, r5 moby): a sound of the moby's model
 TEXT_LOOKUP = 0x7B740      # (r3 text id) -> string
+# Help messages. Text table: 16-byte entries {string, id, ..}, the pointer to it at TEXT_TABLE,
+# their number at TEXT_COUNT. SHOW_MESSAGE(text id, message index) puts a help message up in place
+# of the one showing; the index is that of its 8-byte record in the saved block 0xa1000c (+0 how
+# often it was shown; 0xffff there keeps it from showing), 0x94 of them, the game's own up to
+# 0x8b. CANCEL_MESSAGE() takes the one showing down.
+SHOW_MESSAGE = 0x7B4F0
+CANCEL_MESSAGE = 0x7B458
+TEXT_TABLE = 0xA1A800
+TEXT_COUNT = 0x7208B0
+SPRINTF = 0x5CD2A8         # (r3 buffer, r4 format, r5...)
+MOBY_ARRAY = 0xA390A0      # -> the mobys, 0x100 bytes each, ended by one with +0x20 = 0xff
+PLANET = 0x969C70          # the level loaded (0..18)
 BOLT_FLY = 2               # SPAWN_BOLTS flag: the bolts fly to Ratchet at once
 MENU_FRAME_CLASS = 0x472   # the pause menu's box frames, one animation of the model per box
 MODEL_SLOTS = 0xE0         # the number of model slots (MODEL_TABLE); a slot from CLASS_SLOT_MAP is below it
@@ -102,6 +114,11 @@ CHOOSER_HOOK = 0xBE2FC             # bl CHOOSER
 TRANS_HOOK = 0xBE71C               # lwz r3, 0x2084(r19)
 TRANS_HOOK_WORD = 0x80732084
 TRANS_EXIT = 0xC81A8
+# Behind the HUD's loop over its widgets in 0xd56d8, the last thing in a frame's update (0x166fb0):
+# what is set there holds for the frame's picture (a moby's colour, which the level's lighting
+# sets again every frame before). r30 and r31 are the HUD's (r31 = its widgets are drawn).
+HUD_HOOK = 0xD5A68                 # ori r3, r30, 0
+HUD_HOOK_WORD = 0x63C30000
 SURFACE_HOOKS = (0x8C400, 0x955A4)  # both bl SURFACE sites, right after the bl HERO_MAIN ones
 # Whatever drops bolts (a broken crate, a dead enemy) goes through 0xfd8d0, which works out their
 # value and a flags word and calls SPAWN_BOLTS here.
@@ -167,11 +184,12 @@ SEG_END = 0x700000
 #   count is centred in, +0x18c the factor of a level 2 Visibomb's blast radius (float),
 #   +0x190 the frame in which a drone of the Drone Device was last seen,
 #   +0x1a0..+0x2a0 the enemies the Taunter lured (LURES in mods/weaponlevels/taunter.py)
+# Golden Clank: +0x2a0..+0x2c0 (see mods/goldenclank.py)
 STATE = 0x1606320
-STATE_END = 0x16065C0
+STATE_END = 0x16065E0
 
 # Data: what a mod embeds is loaded through the ELF's three unused PT_LOAD entries (program
 # header index, address). Each takes the data of all mods one after the other, 16-byte aligned:
 # "ro" is read-only, "rw" writable (flags 6), "rw2" writable with the flags 0x6600006.
-SEGMENTS = {"ro": (2, 0x1610000), "rw": (3, 0x1620000), "rw2": (4, 0x1630000)}
+SEGMENTS = {"ro": (2, 0x1610000), "rw": (3, 0x1630000), "rw2": (4, 0x1640000)}
 FAR_CODE = "ro"

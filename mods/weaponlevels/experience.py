@@ -46,14 +46,8 @@ BOSS_SNAGGLEBEAST, BOSS_MUTANT = 0x452, 0x41B
 DRONE_HOOK = 0x39B3C4          # ori r31, r3, 0
 DRONE_HOOK_WORD = 0x607F0000
 
-# The message. Text table: 16-byte entries {string, id, ..}, the pointer to it at TEXT_TABLE, their
-# number at TEXT_COUNT. SHOW_MESSAGE(text id, message index) puts a help message up in place of the
-# one showing; the index is that of its 8-byte record in the saved block 0xa1000c (+0 how often it
-# was shown; 0xffff there keeps it from showing), 0x94 of them.
-SHOW_MESSAGE = 0x7B4F0
-MESSAGE_INDEX = 0x93           # the last record; taken to be unused
-TEXT_TABLE = 0xA1A800
-TEXT_COUNT = 0x7208B0
+# The message (SHOW_MESSAGE, see game.py), with the record MESSAGE_INDEX.
+MESSAGE_INDEX = 0x93           # the last record; taken to be unused (goldenclank has 0x92)
 GOLD_TEXT = {0x0A: 0x53CB, 0x10: 0x53CC, 0x0F: 0x53CD, 0x14: 0x53CE, 0x11: 0x53CF,     # "You got the Gold Bomb Glove!" ...
              0x0B: 0x53D0, 0x19: 0x53D1, 0x13: 0x53D2, 0x09: 0x53D3, 0x15: 0x53D4}
 BORROWED_TEXT = 0x5302

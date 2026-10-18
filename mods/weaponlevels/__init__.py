@@ -99,7 +99,7 @@ def hooks(args):
             Hook(DAMAGE_HOOK, "damage", DAMAGE_HOOK_WORD, jump=True),
             Hook(SWEEP_DAMAGE_HOOK, "sweep_damage", SWEEP_DAMAGE_HOOK_WORD, jump=True),
             Hook(HUD_BAR_HOOK, "hud_bar", HUD_BAR_HOOK_WORD), Hook(AMMO_BAR_HOOK, "ammo_bar", AMMO_BAR_HOOK_WORD),
-            Hook(HUD_FLASH_HOOK, "hud_flash", HUD_FLASH_HOOK_WORD),
+            Hook(HUD_HOOK, "hud_flash", HUD_HOOK_WORD, chain=True),
             Hook(ICON_HOOK, "icon_gold", ICON), Hook(TINT_HOOK, "tint", TINT_HOOK_WORD),
             Hook(QUICK_ICON_HOOK, "quick_icon", ICON), Hook(ICON_SPRITE, "icon_lookup", ICON_SPRITE_WORD, jump=True),
             Hook(MENU_TINT_HOOK, "menu_tint", MENU_TINT_HOOK_WORD),

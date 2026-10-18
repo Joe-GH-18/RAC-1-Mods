@@ -33,8 +33,6 @@ ICON_BASE = 0xEA60
 # behind the HUD's widget loop, which runs every frame), the camera's own shake channel 0
 # (CAMERA_STATE +0x160: strength, value, frames left, frames in all), and bolts that burst from
 # the enemy and fly to Ratchet.
-HUD_FLASH_HOOK = 0xD5A68       # ori r3, r30, 0
-HUD_FLASH_HOOK_WORD = 0x63C30000
 FLASH_FRAMES, FLASH_ALPHA, FLASH_COLOUR = 30, 0x50, 0x20D0FF     # an alpha of 0x80 hides the picture altogether
 # The HUD's x = 0 is not the left edge of a wide screen: drawn from 0, the flash left a strip on
 # the left uncovered.
@@ -99,7 +97,6 @@ MENU_BAR_WIDTH = 120
 # pose's fourth corner, joint 4 at +0x58, is the bottom left one and has to move with them);
 # the ammunition box's is animation MENU_BOX_ANIM. The numbers were placed in a running game
 # (state +0x170 to +0x188).
-SPRINTF = 0x5CD2A8
 DRAW_TEXT = 0x6A510
 MENU_TEXT_COLOUR = 0x80FEA888  # the count's
 XP_TEXT, XP_TEXT_MAX_TEXT = b"XP %d/%d", b"Level 2"
@@ -504,8 +501,8 @@ hf_out:
     addi 1, 1, 0x70
     ld 0, 0x10(1)
     mtlr 0
-    ori 3, 30, 0                    # the displaced instruction
-    blr
+hud_flash_next:
+    {CHAIN}
 
 weapon_gold:                        # r31 = the weapon, r30 = its colour, r29 = it is to be set, r28 = FX
     mflr 0
