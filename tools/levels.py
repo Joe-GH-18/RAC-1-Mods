@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Show or set the weapon levels of a running game (through tools/trace.py; see mods/weaponlevels.py).
+"""Show or set the weapon levels of a running game (through tools/trace.py; see mods/weaponlevels/).
 
 levels.py                  every weapon: owned, experience / what level 2 takes, gold
 levels.py near <item>      leave the weapon one kill short of level 2
@@ -57,7 +57,7 @@ def give(item):
 
 
 def fx_block():
-    """The address of the level-up's numbers (FX in mods/weaponlevels.py): found by the smoke's f1 in the mods' writable data."""
+    """The address of the level-up's numbers (FX in mods/weaponlevels/fx.py): found by the smoke's f1 in the mods' writable data."""
     from mods.game import SEGMENTS
     start, mark = SEGMENTS["rw"][1], struct.pack(">f", 400000.0)
     for base in range(start, start + 0x10000, 0x2000):

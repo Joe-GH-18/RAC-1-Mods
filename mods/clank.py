@@ -66,7 +66,6 @@ STATE_TYPE_JUMP, CAMERA_JUMP = 4, 0x50
 # his position), throws him back with the game's two numbers under a gravity of its own, levels
 # him, and plays the animation his hurt state 0x46 sets (set_state 0xbd0e8: hero_set_anim(6, 3,
 # -3.0), 22 frames). It lasts at least those 22 frames and until he is on the ground.
-THRUST_BUMP_RATIO = 0.5
 BUMP_SPEED, BUMP_DECEL = 9.0, 24.0             # (set_state table 0xb70d0 +0x1dc; handler 0xb0c58)
 CLANK_BUMP_GRAVITY = 30.0      # units/s^2, not from the game
 CLANK_BUMP_FRAMES, CLANK_BUMP_MAX_FRAMES = 22, 60

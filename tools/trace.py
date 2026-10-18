@@ -9,6 +9,11 @@ import subprocess
 import sys
 import time
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+from mods.weaponlevels import xp_offsets  # noqa: E402
+
+XP_AT = xp_offsets()        # item -> offset of its experience from the ammunition array
+
 # The emulator: the environment variable RPCS3, or the first line of the file rpcs3.path next to
 # build.py (not part of the repository), or "rpcs3" from the search path.
 RPCS3 = os.environ.get("RPCS3") or "rpcs3"
@@ -115,7 +120,7 @@ def main():
     sampled = 0.0
     other_last = None       # (hero type, animation, buttons) while the hero is not Ratchet
     dash_last = 0
-    levels_last = None      # weapon experience and gold versions (see mods/weaponlevels.py)
+    levels_last = None      # weapon experience and gold versions (see mods/weaponlevels/)
     while proc.poll() is None:
         run_commands()
         try:
@@ -197,10 +202,9 @@ def main():
             dash_last = dash
             levels = (rd(0x96C0AC, "32s"), rd(0x969CA8, "40s"))
             if levels != levels_last:
-                xp = struct.unpack(">2H4x12H", levels[0])
+                xp = {item: struct.unpack_from(">H", levels[0], at)[0] for item, at in sorted(XP_AT.items())}
                 print(f"{now:8.2f}s weapons: hand_item={rd(HERO + 0x10B8, 'i'):#x} experience="
-                      + " ".join(f"{item:#x}:{'L2' if value == 0xFFFF else value}" for item, value in
-                                 zip((0x9, 0xA, 0xB, 0xD, 0xF, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x17, 0x18, 0x19), xp))
+                      + " ".join(f"{item:#x}:{'L2' if value == 0xFFFF else value}" for item, value in xp.items())
                       + " gold=" + ",".join(f"{item:#x}" for item, flag in enumerate(levels[1]) if flag), flush=True)
                 levels_last = levels
             if st != last:

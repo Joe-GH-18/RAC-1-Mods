@@ -17,7 +17,8 @@ Everything was made and tested on RPCS3 under Linux. It has not been tried on a 
 
 ## Patching the game
 
-You need Python 3 and the game's **decrypted** executable.
+You need Python 3 and the game's **decrypted** executable. The Charge Boots and Strafing also
+need **Ratchet & Clank 2's game data** from your own copy (see below); the other mods do not.
 
 1. In RPCS3 choose *Utilities > Decrypt PS3 Binaries* and pick the game's
    `dev_hdd0/game/NPEA00385/USRDIR/EBOOT.BIN`. RPCS3 writes `EBOOT.elf` next to it.
@@ -42,7 +43,17 @@ result in the file's own place (the file is kept as `<file>.bak`). That puts in 
 
 Every mod is a patch file of its own in `patches/`, and any of them can be combined. To
 change your choice later, run the patcher again on the patched file: it recognises its own
-mods, takes them out and puts in the ones you pick now.
+mods and starts again from the unmodified executable next to it (RPCS3's `EBOOT.elf`, or the
+copy it kept as `.bak`).
+
+### Ratchet & Clank 2's data (Charge Boots, Strafing)
+
+These two mods use RC2's charge and backwards-walk animations, its charge sounds and its
+Charge Boots model. None of that is in this repository: the patcher takes it from your own
+RC2, the folder `rc2/ps3data` of the Trilogy disc (in `PS3_GAME/USRDIR`, next to
+`RC1.ppu.self`), and checks it against checksums. It finds that folder by itself when the
+executable you patch sits in the same `USRDIR`; otherwise it asks for the folder, or take
+`--rc2 /path/to/rc2/ps3data`. Without RC2's data the patcher offers the other three mods.
 
 The patcher only accepts the one executable it was made for (it compares checksums), so a
 wrong file, or one modified by something else, is refused instead of broken.
@@ -52,23 +63,23 @@ wrong file, or one modified by something else, is refused instead of broken.
 ## What is in here
 
 - `patch.py`: the patcher. Plain Python, no packages needed.
+- `rc2data.py`: takes the RC2 data two mods use from your copy of RC2 (patch.py and build.py
+  use it).
 - `patches/`: one patch file per mod (`boxbreaker`, `chargeboots`, `strafing`, `clank`,
-  `weaponlevels`); the bolt crank boost is part of the Charge Boots.
-- `mods/`: the source of the mods, one file each, with what the mod does and where its numbers
-  come from at the top. `game.py` holds what they share (the game's functions and addresses,
-  the memory they use), `sweep.py` the crate sweep three of them call.
-- `build.py`: assembles the mods, embeds the data in `assets/` and writes the patched
-  executable and the patch files.
-- `assets/`: data taken from Ratchet & Clank 2 that the mods embed: two of Ratchet's
-  animations, the two charge sounds, and the Charge Boots model with its texture and menu
-  icons. The patch files contain the same data.
+  `weaponlevels`); the bolt crank boost is part of the Charge Boots. They contain the mods'
+  own code only, no game data.
+- `mods/`: the source of the mods, one file or folder each, with what the mod does and where
+  its numbers come from at the top. `game.py` holds what they share (the game's functions and
+  addresses, the memory they use), `sweep.py` the crate sweep three of them call.
+- `build.py`: assembles the mods and writes the patched executable and the patch files.
 - `tools/`: what the mods were found and tested with (disassembly, cross references, a
   reader for the game's archives, a tracer that reads a running RPCS3's memory).
 
 ## Building from source
 
 Only needed to change the mods. It takes the packages in `requirements.txt` (capstone and
-keystone) and the same decrypted executable:
+keystone), the same decrypted executable and RC2's data (`rc2/ps3data` next to the executable,
+as on the Trilogy disc, or the folder in the environment variable `RC2_DATA`):
 
 ```
 python -m venv .venv
@@ -82,8 +93,8 @@ tuning options (Box Breaker radius, charge speeds) and `--install`, which copies
 into RPCS3's game folder. Instead of the environment variable, the path can be put in a file
 `rc1_elf.path` next to `build.py`.
 
-A new mod is a new file in `mods/`, added to the list in `mods/__init__.py`, which also says
-what such a file has to contain. Mods do not call each other; where two of them need the same
+A new mod is a new file (or folder) in `mods/`, added to the list in `mods/__init__.py`, which
+also says what it has to contain. Mods do not call each other; where two of them need the same
 game instruction, `build.py` and the patcher chain them.
 
 ## Limits
@@ -101,6 +112,8 @@ game instruction, `build.py` and the patcher chain them.
 
 ## Licence
 
-The code in this repository (the patcher, `build.py`, `mods/` and the tools) is under the Apache
-License 2.0, see `LICENSE`. That does not cover the game data: the files in `assets/` and the
-data embedded in the patch files come from Ratchet & Clank 2 and belong to its owners.
+The code in this repository (the patcher, `build.py`, `rc2data.py`, `mods/` and the tools) is
+under the Apache License 2.0, see `LICENSE`. This repository contains no data of the games:
+the patch files hold the mods' own code, and what two mods use of Ratchet & Clank 2 is taken
+from the player's own copy when patching. Ratchet & Clank is a trademark of Sony Interactive
+Entertainment; this project is not affiliated with Sony or Insomniac Games.

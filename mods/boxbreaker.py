@@ -57,7 +57,6 @@ MATRIX_MULTIPLY = 0x5014D4         # (r3 out, r4 a, r5 b)                       
 # its bolts get the flag.
 CRATE_BREAK_HOOKS = (0x3A6F58, 0x3A7820, 0x3A7FE0)   # all three bl CRATE_BREAK_FX sites
 CRATE_BREAK_FX = 0x3A5468
-BOLT_FLY = 2
 BOX_WINDOW = 35
 
 STRIKE_HOOK = 0xB01F4              # bl COLLECT in the state 0x14 landing code

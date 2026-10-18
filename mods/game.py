@@ -79,11 +79,16 @@ SPAWN = 0xEFA28            # (r3 class) -> new moby, 0 when none is free
 FRAME_COUNTER = 0xA10710   # frames since the level started                           [RC2 0x156b070]
 SPAWN_BOLTS = 0xFCD60      # (r3 source moby, r4/r5 value range, r6 flags, r7)
 ICON_SPRITE = 0xCA3E4      # (r3 icon id, r4 version) -> sprite
-ICON_DRAW = 0xCA0F4        # (r3 sprite, x, y, w, h, alpha): an icon of the menus (see mods/chargeboots.py)
+ICON_DRAW = 0xCA0F4        # (r3 sprite, x, y, w, h, alpha): an icon of the menus (see mods/chargeboots/menu.py)
 ITEM_TABLE = 0x721000      # 0x4c bytes per item: +0 name text id, +4 the gold version's, +8 slot, +0x10/+0x14 classes
 CLASS_SLOT_MAP = 0xA354C0  # byte per class id -> model slot
 MODEL_TABLE = 0xA34C00     # model pointer per slot
 PLAY_SOUND_DEF = 0x15CE18  # (r3 definition, r4 flags, r5 moby, r6 = 0, r7 = 0x400) -> voice slot or -1
+PLAY_MODEL_SOUND = 0x15D12C  # (r3 definition index, r4 flags, r5 moby): a sound of the moby's model
+TEXT_LOOKUP = 0x7B740      # (r3 text id) -> string
+BOLT_FLY = 2               # SPAWN_BOLTS flag: the bolts fly to Ratchet at once
+MENU_FRAME_CLASS = 0x472   # the pause menu's box frames, one animation of the model per box
+MODEL_SLOTS = 0xE0         # the number of model slots (MODEL_TABLE); a slot from CLASS_SLOT_MAP is below it
 # Voice table: 0x70 bytes per voice; +0x74 state (0 = free, 7 = queued), +0x78 definition,
 # +0x88 moby to follow (set by RC1's play-model-sound 0x15d12c after PLAY_SOUND_DEF).
 VOICES = 0x963760
@@ -154,14 +159,14 @@ SEG_END = 0x700000
 #   left and top edge
 #   +0x154 the icon looked up last is to be drawn in gold by the menus
 #   +0x158 for tuning: the colour of a level 2 weapon in his hand, +0x15c the frames of the
-#   level-up left (see FX in mods/weaponlevels.py)
+#   level-up left (see FX in mods/weaponlevels/fx.py)
 #   +0x170/+0x174 for tuning: added to the x and y of the experience bar in the pause menu,
 #   +0x178 added to the y of its experience in words, +0x17c for tuning: the colour of a level 2
 #   Walloper's sparks (00BBGGRR), +0x180 added to the x of the experience in words in the menu,
 #   +0x184 how much taller the menu's ammunition box is (pose units), +0x188 the height the
 #   count is centred in, +0x18c the factor of a level 2 Visibomb's blast radius (float),
 #   +0x190 the frame in which a drone of the Drone Device was last seen,
-#   +0x1a0..+0x2a0 the enemies the Taunter lured (LURES in mods/weaponlevels.py)
+#   +0x1a0..+0x2a0 the enemies the Taunter lured (LURES in mods/weaponlevels/taunter.py)
 STATE = 0x1606320
 STATE_END = 0x16065C0
 
