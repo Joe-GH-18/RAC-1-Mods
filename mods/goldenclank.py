@@ -108,7 +108,7 @@ BURST = ((0.0, 0.0, 0.2), (0.0, 0.0, 0.0), 400000.0, 0.22, (0x3060E0FF, 0x2840D0
 SMOKE = ((0.0, 0.0, 0.2), (0.0, 0.0, 0.1), 400000.0, 0.1, (0x0820C8FF, 0x0520B8FF), (30, 34), 2)
 CHORD_FRAMES = 8                   # how long a first L3 or R3 waits for the other
 GROW_FRAMES = 20
-GIANT_SCALE = 2.0                  # times his own scale
+GIANT_SCALE = 1.0                  # backpack Clank in the mode, times his own scale (his parts come instead)
 GIANT_SOUNDS = (BUY_SOUND + 1, BUY_SOUND + 1)   # on, off: Ratchet's sound definition + 1 (0 = none)
 GIANT_SHAKE = (20, 0.2)            # frames, strength
 GIANT_GLOW = (0x40B0FF, 20)        # Ratchet's colour (00BBGGRR) at the switch, frames
@@ -132,7 +132,25 @@ PARTS = (((74, 83),), ((33, 52),), ((53, 72),), ((33, 72),), ((0, 8), (73, 73)))
 PART_LEGS, PART_LEFT_ARM, PART_RIGHT_ARM, PART_ARMS, PART_BODY = range(len(PARTS))
 # The test moby: shown, its scale, where it stands from Ratchet (x, y, z), its animation, its
 # turn, its model (0 the whole of him, 1 + a part).
-TEST = (1, 0.15, (2.5, 0.0, 0.0), 0, 0.0, 0)
+TEST = (0, 0.15, (2.5, 0.0, 0.0), 0, 0.0, 0)
+# His animations (set_state's for his states, NOTES.md): idle 0x5a, walk 0x5b, missiles 0x5f,
+# punch 0x60 (9 or 10: left or right), bomb 0x61.
+IDLE_ANIM, WALK_ANIM, MISSILE_ANIM, PUNCH_ANIMS, BOMB_ANIM = 0, 3, 8, (9, 10), 12
+ANIM_BLEND = 4                     # frames an animation change blends over
+# His legs under Ratchet in the mode: scale, where (forward, left, up from Ratchet, turned with
+# him), turn, the speed (units a frame, hero +0x194; a run is about 0.09) from which they walk,
+# and the walk animation's speed per unit a frame of his (moby +0x58, 1 = its own).
+LEGS = (0.25, (0.0, 0.0, 0.0), 0.0, 0.01, 10.0)  # scale: hips at Ratchet's, "its good" (the user, 2026-10-19)
+COS, SIN = 0x5E8078, 0x5E8128      # (f1 radians) -> f1
+# Robot legs run faster (the user's wish): in the mode, the speed BUILD_VELOCITY makes the
+# velocity of (hero +0x194, loaded once at VELOCITY_HOOK) is taken RUN times while Ratchet walks
+# (hero state 2; jumps and the rest keep their own). Doubling STICK_TARGET's scale (f1) instead
+# left his run at 5.7 units/s: the walk's target speed +0x190 does not come from it.
+RUN = 2.0
+WALK_STATE = 0x2
+VELOCITY_HOOK = 0x9C1F4            # lfs f31, 0x194(r31) in BUILD_VELOCITY (r31 = hero); r11, r12, f0, cr0 free
+VELOCITY_HOOK_WORD = 0xC3FF0194
+VELOCITY_BACK = VELOCITY_HOOK + 4
 # State block (game.py): +0x2a0 the display found this frame (0 = none), +0x2a4 the prompt is up,
 # +0x2a8 the display's height as found; for tuning in a running game (0 = the built-in value):
 # +0x2ac scale (float), +0x2b0 height above it (float), +0x2b4 turn a frame (float), +0x2b8 colour,
@@ -141,22 +159,26 @@ TEST = (1, 0.15, (2.5, 0.0, 0.0), 0, 0.0, 0)
 # +0x2cc the moves' buttons pressed this frame, +0x2d0 frames of growing or shrinking left,
 # +0x2d4 backpack Clank's own scale (0 = not seen yet), +0x2d8 the burst is due, +0x2dc frames
 # of Ratchet's glow left.
-# Giant Clank's model: +0x2e0 where it is installed (0 = not yet), +0x2e4 the test moby, +0x2e8
-# the frame counter a frame ago (it starts again with each level, and the moby with it goes),
-# +0x2ec the animation the test moby was given, +0x2f0 the model it was given.
+# Giant Clank's model: +0x2e0 where it is installed (0 = not yet), +0x2e4 the frame counter a
+# frame ago (it starts again with each level, and the mobys with it go). A moby showing him has a
+# record of 0x10 bytes (gc_show): +0 the moby, +4 the model it was given, +8 its animation;
+# +0x2f0 the test moby's, +0x300 the legs'.
 S_DISPLAY, S_PROMPT, S_BASE_Z = 0x2A0, 0x2A4, 0x2A8
 S_SCALE, S_LIFT, S_SPIN, S_COLOUR = 0x2AC, 0x2B0, 0x2B4, 0x2B8
 S_POSE_ANIM, S_POSE_FRAME, S_POSE_ON = 0x2BC, 0x2BD, 0x2BF
 S_MODE, S_CHORD, S_CHORD_LEFT, S_MOVES = 0x2C0, 0x2C4, 0x2C8, 0x2CC
 S_GROW, S_BASE, S_BURST, S_GLOW = 0x2D0, 0x2D4, 0x2D8, 0x2DC
-S_MODEL, S_TEST_MOBY, S_FRAME, S_TEST_ANIM, S_TEST_SHOWN = 0x2E0, 0x2E4, 0x2E8, 0x2EC, 0x2F0
+S_MODEL, S_FRAME, S_TEST_PART, S_LEGS = 0x2E0, 0x2E4, 0x2F0, 0x300
+PART_RECORDS = (S_TEST_PART, S_LEGS)
 # GIANT, the writable block: +0x00 BURST and +0x38 SMOKE (the layout PUFFS), +0x70 CHORD_FRAMES,
 # +0x74 GROW_FRAMES, +0x78 GIANT_SCALE (float), +0x7c/+0x80 GIANT_SOUNDS, +0x84/+0x88 GIANT_SHAKE
 # (frames, float), +0x8c/+0x90 GIANT_GLOW, +0x94 TEST: shown, scale (float), x, y, z (floats),
-# animation, turn (float), model.
+# animation, turn (float), model; +0xb4 LEGS: scale, forward, left, up, turn, walk from, walk
+# speed (floats); +0xd0 RUN (float).
 G_BURST, G_SMOKE, G_CHORD, G_GROW, G_SCALE = 0x00, 0x38, 0x70, 0x74, 0x78
 G_SOUND_ON, G_SOUND_OFF, G_SHAKE_FRAMES, G_SHAKE, G_GLOW, G_GLOW_FRAMES = 0x7C, 0x80, 0x84, 0x88, 0x8C, 0x90
 G_TEST, G_TEST_SCALE, G_TEST_AT, G_TEST_ANIM, G_TEST_TURN, G_TEST_MODEL = 0x94, 0x98, 0x9C, 0xA8, 0xAC, 0xB0
+G_LEGS_SCALE, G_LEGS_AT, G_LEGS_TURN, G_WALK_FROM, G_WALK_RATE, G_RUN = 0xB4, 0xB8, 0xC4, 0xC8, 0xCC, 0xD0
 
 # pedestal: jumped to from the top of the update (r3 = the moby; LR is the moby loop's).
 # gc_frame: replaces bl HERO_MAIN; gc_tick(): the room, the prompt and the purchase.
@@ -165,6 +187,7 @@ G_TEST, G_TEST_SCALE, G_TEST_AT, G_TEST_ANIM, G_TEST_TURN, G_TEST_MODEL = 0x94, 
 # gc_pad: replaces bl GAMEPLAY_FRAME; gc_input(): the chord and the moves' buttons.
 # gc_switch(r31 = state block, r29 = GIANT): the mode was switched: sound, shake, glow, burst.
 # gc_giant(): Clank's size, the burst and the smoke. gc_puffs(r3 = a set, r4 = a moby): its puffs.
+# gc_velocity: jumped to from VELOCITY_HOOK.
 CODE = """
 pedestal:
     lhz 11, 0xa6(3)
@@ -181,7 +204,7 @@ gc_frame:
     stdu 1, -0x70(1)
     bl gc_tick
     bl gc_giant
-    bl gc_test
+    bl gc_parts
     addi 1, 1, 0x70
     ld 0, 0x10(1)
     mtlr 0
@@ -841,10 +864,10 @@ gi_part:                            # each part: the model's header and mesh wit
     mtlr 0
     blr
 
-gc_test:                            # the test moby next to Ratchet
+gc_parts:                           # the mobys showing his parts
     mflr 0
     std 0, 0x10(1)
-    stdu 1, -0xa0(1)
+    stdu 1, -0xb0(1)
     std 31, 0x70(1)
     std 30, 0x78(1)
     std 29, 0x80(1)
@@ -853,119 +876,246 @@ gc_test:                            # the test moby next to Ratchet
     lis 9, {OWNED_HA}
     lhz 9, {OWNED_LO}(9)
     cmpwi 9, 0
-    beq gx_out
+    beq gq_out
     lis 31, {STATE_HA}
     addi 31, 31, {STATE_LO}
     lis 30, {HERO_HA}
     addi 30, 30, {HERO_LO}
     lis 29, {GIANT_HA}
     addi 29, 29, {GIANT_LO}
-    lis 9, {FRAME_COUNTER_HA}       # a new level: the moby went with the old one
+    lis 9, {FRAME_COUNTER_HA}       # a new level: the mobys went with the old one
     lwz 9, {FRAME_COUNTER_LO}(9)
     lwz 10, {S_FRAME}(31)
     stw 9, {S_FRAME}(31)
     cmplw 9, 10
-    bge gx_level
+    bge gq_test
     li 9, 0
-    stw 9, {S_TEST_MOBY}(31)
-gx_level:
+@RECORDS_FORGET@
+gq_test:
+    li 28, 0                        # the model to show, 0 = none
     lwz 9, {G_TEST}(29)
     cmpwi 9, 0
-    beq gx_remove
+    beq gq_test_show
     bl gc_install
-    lwz 9, {S_MODEL}(31)
-    cmpwi 9, 0
-    beq gx_out
-    lwz 10, {G_TEST_MODEL}(29)      # the whole of him, or a part
-    cmpwi 10, 0
-    beq gx_model
-    addi 10, 10, -1
-    mulli 10, 10, {HEADER}
-    add 9, 9, 10
-    lis 10, {HEADERS_AT_HI}
-    ori 10, 10, {HEADERS_AT_LO}
-    add 9, 9, 10
-gx_model:
-    lwz 28, {S_TEST_MOBY}(31)
-    cmpwi 28, 0
-    beq gx_spawn
-    lwz 10, 0x24(28)                # still ours?
-    lwz 11, {S_TEST_SHOWN}(31)
-    cmpw 10, 11
-    bne gx_spawn
-    stw 9, 0x24(28)
-    stw 9, {S_TEST_SHOWN}(31)
-    b gx_have
-gx_spawn:
-    mr 27, 9
-    li 3, {CARRIER_CLASS}
-    bl {SPAWN}
-    mr. 28, 3
-    stw 28, {S_TEST_MOBY}(31)
-    beq gx_out
-    mr 9, 27
-    stw 9, 0x24(28)
-    stw 9, {S_TEST_SHOWN}(31)
-    li 9, 0xff                      # updated at any distance
-    stb 9, 0x30(28)
-    li 9, 1                         # and drawn (+0x32: 0 = never)
-    stb 9, 0x31(28)
-    li 9, {DRAW_DISTANCE}
-    sth 9, 0x32(28)
-    lhz 9, 0x34(28)                 # and by the moby loop (backpack Clank is moved by the hero code)
-    rlwinm 9, 9, 0, {NOT_SKIP_MB}, {NOT_SKIP_ME}
-    sth 9, 0x34(28)
-    li 9, -1
-    stw 9, {S_TEST_ANIM}(31)
-gx_have:
+    lwz 3, {G_TEST_MODEL}(29)
+    bl gc_model
+    mr 28, 3
+gq_test_show:
+    addi 3, 31, {S_TEST_PART}
+    mr 4, 28
+    bl gc_show
+    mr. 27, 3
+    beq gq_legs
+    addi 3, 31, {S_TEST_PART}
     lwz 4, {G_TEST_ANIM}(29)
-    lwz 9, {S_TEST_ANIM}(31)
-    cmpw 4, 9
-    beq gx_place
-    stw 4, {S_TEST_ANIM}(31)
-    mr 3, 28
-    li 5, 0
-    li 6, 0
-    bl {MOBY_SET_ANIM}
-gx_place:
+    bl gc_anim
     lfs 0, 0x80(30)
     lfs 1, {G_TEST_AT}(29)
     fadds 0, 0, 1
-    stfs 0, 0x10(28)
+    stfs 0, 0x10(27)
     lfs 0, 0x84(30)
     lfs 1, {G_TEST_AT} + 4(29)
     fadds 0, 0, 1
-    stfs 0, 0x14(28)
+    stfs 0, 0x14(27)
     lfs 0, 0x88(30)
     lfs 1, {G_TEST_AT} + 8(29)
     fadds 0, 0, 1
-    stfs 0, 0x18(28)
+    stfs 0, 0x18(27)
     lfs 0, {G_TEST_SCALE}(29)
-    stfs 0, 0x2c(28)
+    stfs 0, 0x2c(27)
     lfs 0, {G_TEST_TURN}(29)
-    stfs 0, 0x48(28)
-    b gx_out
-gx_remove:
-    lwz 3, {S_TEST_MOBY}(31)
-    cmpwi 3, 0
-    beq gx_out
-    li 9, 0
-    stw 9, {S_TEST_MOBY}(31)
-    lwz 9, 0x24(3)
-    lwz 10, {S_TEST_SHOWN}(31)
-    cmpw 9, 10
-    bne gx_out
-    bl {MOBY_DELETE}
-gx_out:
+    stfs 0, 0x48(27)
+gq_legs:                            # his legs under Ratchet while the mode is on and he is on foot
+    li 28, 0
+    lwz 9, {S_MODE}(31)
+    cmpwi 9, 0
+    beq gq_legs_show
+    lbz 9, {HERO_KIND}(30)
+    cmpwi 9, 0
+    bne gq_legs_show
+    lwz 9, 0x2084(30)
+    cmpwi 9, {FREE_A}
+    beq gq_legs_show
+    cmpwi 9, {FREE_B}
+    beq gq_legs_show
+    cmpwi 9, {FREE_C}
+    beq gq_legs_show
+    bl gc_install
+    li 3, 1 + {PART_LEGS}
+    bl gc_model
+    mr 28, 3
+gq_legs_show:
+    addi 3, 31, {S_LEGS}
+    mr 4, 28
+    bl gc_show
+    mr. 27, 3
+    beq gq_out
+    lfs 1, 0x194(30)                # walking, at his speed, or standing
+    lfs 2, {G_WALK_FROM}(29)
+    li 4, {IDLE_ANIM}
+    fcmpu 0, 1, 2
+    blt gq_legs_anim
+    li 4, {WALK_ANIM}
+gq_legs_anim:
+    addi 3, 31, {S_LEGS}
+    bl gc_anim
+    lis 9, {POOL_HA}
+    addi 9, 9, {POOL_LO}
+    lfs 0, {P_ONE}(9)
+    lwz 10, {S_LEGS} + 8(31)
+    cmpwi 10, {WALK_ANIM}
+    bne gq_legs_rate
+    lfs 1, 0x194(30)
+    lfs 2, {G_WALK_RATE}(29)
+    fmuls 0, 1, 2
+    lfs 2, {G_RUN}(29)              # he goes RUN times as fast as +0x194 says
+    fmuls 0, 0, 2
+gq_legs_rate:
+    stfs 0, 0x58(27)
+    lfs 1, 0x98(30)                 # turned with him
+    bl {COS}
+    stfs 1, 0xa0(1)
+    lfs 1, 0x98(30)
+    bl {SIN}
+    lfs 2, 0xa0(1)                  # f2 = cos, f1 = sin
+    lfs 3, {G_LEGS_AT}(29)          # forward
+    lfs 4, {G_LEGS_AT} + 4(29)      # left
+    lfs 0, 0x80(30)
+    fmadds 0, 3, 2, 0
+    fnmsubs 0, 4, 1, 0
+    stfs 0, 0x10(27)
+    lfs 0, 0x84(30)
+    fmadds 0, 3, 1, 0
+    fmadds 0, 4, 2, 0
+    stfs 0, 0x14(27)
+    lfs 0, 0x88(30)
+    lfs 3, {G_LEGS_AT} + 8(29)
+    fadds 0, 0, 3
+    stfs 0, 0x18(27)
+    lfs 0, {G_LEGS_SCALE}(29)
+    stfs 0, 0x2c(27)
+    lfs 0, 0x98(30)
+    lfs 1, {G_LEGS_TURN}(29)
+    fadds 0, 0, 1
+    stfs 0, 0x48(27)
+gq_out:
     ld 27, 0x90(1)
     ld 28, 0x88(1)
     ld 29, 0x80(1)
     ld 30, 0x78(1)
     ld 31, 0x70(1)
-    addi 1, 1, 0xa0
+    addi 1, 1, 0xb0
     ld 0, 0x10(1)
     mtlr 0
     blr
+
+gc_model:                           # (r3 = 0 the whole of him, 1 + a part; r31 = state block) -> r3 = its model, 0 = none yet
+    lwz 4, {S_MODEL}(31)
+    cmpwi 4, 0
+    beq gm_none
+    cmpwi 3, 0
+    beq gm_whole
+    addi 3, 3, -1
+    mulli 3, 3, {HEADER}
+    add 4, 4, 3
+    lis 3, {HEADERS_AT_HI}
+    ori 3, 3, {HEADERS_AT_LO}
+gm_whole:
+    add 3, 4, 3                     # (r3 = 0 here for the whole of him)
+    blr
+gm_none:
+    li 3, 0
+    blr
+
+gc_show:                            # (r3 = a record, r4 = the model to show, 0 = none) -> r3 = the moby, 0 = none
+    mflr 0
+    std 0, 0x10(1)
+    stdu 1, -0x90(1)
+    std 31, 0x70(1)
+    std 30, 0x78(1)
+    std 29, 0x80(1)
+    mr 31, 3
+    mr 30, 4
+    lwz 29, 0(31)
+    cmpwi 29, 0
+    beq gs_new
+    lwz 9, 0x24(29)                 # still ours?
+    lwz 10, 4(31)
+    cmpw 9, 10
+    beq gs_ours
+    li 29, 0
+    stw 29, 0(31)
+gs_new:
+    cmpwi 30, 0
+    beq gs_done
+    li 3, {CARRIER_CLASS}
+    bl {SPAWN}
+    mr. 29, 3
+    stw 29, 0(31)
+    beq gs_done
+    li 9, 0xff                      # updated at any distance
+    stb 9, 0x30(29)
+    li 9, 1                         # and drawn (+0x32: 0 = never)
+    stb 9, 0x31(29)
+    li 9, {DRAW_DISTANCE}
+    sth 9, 0x32(29)
+    lhz 9, 0x34(29)                 # and by the moby loop (backpack Clank is moved by the hero code)
+    rlwinm 9, 9, 0, {NOT_SKIP_MB}, {NOT_SKIP_ME}
+    sth 9, 0x34(29)
+    li 9, -1
+    stw 9, 8(31)
+    b gs_model
+gs_ours:
+    cmpwi 30, 0
+    bne gs_model
+    li 9, 0                         # not wanted any more
+    stw 9, 0(31)
+    mr 3, 29
+    li 29, 0
+    bl {MOBY_DELETE}
+    b gs_done
+gs_model:
+    stw 30, 0x24(29)
+    stw 30, 4(31)
+gs_done:
+    mr 3, 29
+    ld 29, 0x80(1)
+    ld 30, 0x78(1)
+    ld 31, 0x70(1)
+    addi 1, 1, 0x90
+    ld 0, 0x10(1)
+    mtlr 0
+    blr
+
+gc_anim:                            # (r3 = a record with a moby, r4 = the animation): set when it changes
+    lwz 5, 8(3)
+    cmpw 5, 4
+    beqlr
+    stw 4, 8(3)
+    lwz 3, 0(3)
+    li 5, 0
+    li 6, {ANIM_BLEND}
+    b {MOBY_SET_ANIM}
+
+gc_velocity:
+    lfs 31, 0x194(31)               # the displaced instruction: his speed
+    lis 11, {STATE_HA}
+    addi 11, 11, {STATE_LO}
+    lwz 12, {S_MODE}(11)
+    cmpwi 12, 0
+    beq gv_back
+    lbz 12, {HERO_KIND}(31)
+    cmpwi 12, 0
+    bne gv_back
+    lwz 12, 0x2084(31)
+    cmpwi 12, {WALK_STATE}
+    bne gv_back
+    lis 11, {GIANT_HA}
+    addi 11, 11, {GIANT_LO}
+    lfs 0, {G_RUN}(11)
+    fmuls 31, 31, 0
+gv_back:
+    b {VELOCITY_BACK}
 
 gc_puffs:
     mflr 0
@@ -1025,7 +1175,8 @@ def hooks(args):
     return [Hook(PEDESTAL_HOOK, "pedestal", PEDESTAL_HOOK_WORD, jump=True),
             *(Hook(site, "gc_frame", HERO_MAIN, chain=True) for site in FRAME_HOOKS),
             Hook(HUD_HOOK, "gc_hud", HUD_HOOK_WORD, chain=True),
-            *(Hook(site, "gc_pad", GAMEPLAY_FRAME, chain=True) for site in PAD_HOOKS)]
+            *(Hook(site, "gc_pad", GAMEPLAY_FRAME, chain=True) for site in PAD_HOOKS),
+            Hook(VELOCITY_HOOK, "gc_velocity", VELOCITY_HOOK_WORD, jump=True)]
 
 
 def data(args):
@@ -1036,10 +1187,15 @@ def data(args):
             return struct.pack(PUFFS, *at, *rise, 0.0, f1, scatter, *colours, *life, count)
 
         shown, scale, at, anim, turn, part = TEST
+        legs_scale, legs_at, legs_turn, walk_from, walk_rate = LEGS
         block = puffs(*BURST) + puffs(*SMOKE) + struct.pack(">2if2Iif2i", CHORD_FRAMES, GROW_FRAMES, GIANT_SCALE,
                                                               *GIANT_SOUNDS, *GIANT_SHAKE, *GIANT_GLOW)
         assert len(block) == G_TEST
-        return block + struct.pack(">if3fifi", shown, scale, *at, anim, turn, part)
+        block += struct.pack(">if3fifi", shown, scale, *at, anim, turn, part)
+        assert len(block) == G_LEGS_SCALE
+        block += struct.pack(">f3f3f", legs_scale, *legs_at, legs_turn, walk_from, walk_rate)
+        assert len(block) == G_RUN
+        return block + struct.pack(">f", RUN)
 
     def index_buffers(vaddr):
         pieces = []
@@ -1096,7 +1252,8 @@ def pool(args):
 
 
 def parts(args):
-    return [CODE]
+    forget = "\n".join(f"    stw 9, {record:#x}(31)" for record in PART_RECORDS)    # r9 = 0: the mobys are gone
+    return [CODE.replace("@RECORDS_FORGET@", forget)]
 
 
 def fields(args, addr):
