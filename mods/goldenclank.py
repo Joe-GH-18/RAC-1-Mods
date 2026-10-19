@@ -14,6 +14,8 @@ display whose gold version is owned goes to state 0xfd, which the moby loop neit
 draws. The mod skips the update of the displays (PEDESTAL_HOOK) and runs them itself from the
 frame hook: all of them in state 0xfd, but the Devastator's, which gets the model of Clank on
 Ratchet's back (class 0x259, in every level), turns and is gold, until Golden Clank is bought.
+Nothing animates it (its update is skipped), so it is held in a pose of that model (POSE); without
+one the model is drawn in its bind pose, the head apart from the body.
 
 Gold bolts are 80 flag bytes at 0xa0ca34 (4 per planet); GOLD_BOLT_COUNT counts the set ones (the
 pause menu's "%d of 40"). Collecting is all there is to them: the game takes 4 off the count for
@@ -50,6 +52,8 @@ BUY_SOUND = 24                     # Ratchet's sound definition 24, the weapon l
 GOLD = 0x0C64B0                    # 00BBGGRR, the weapon levels' gold
 DISPLAY_SCALE = 0.3
 DISPLAY_LIFT = 0.0                 # added to the display's height
+POSE = (1, 2, 1, 1, 0.4)           # frame, next frame, their animations, the blend between them: folded, eyes to the front
+FRAME_POINTERS = 0xEF74C           # (r3 moby): +0x68/+0x6c from the animations and frames at +0x50..+0x53
 SPIN = 0.02                        # rad a frame
 RANGE = 3.5                        # how near Ratchet has to be to the display (x and y)
 SHAKE = (30, 0.25)                 # frames, strength of the camera shake at the purchase
@@ -59,9 +63,11 @@ TEXT_GOT = b"You got \x0cGolden Clank\x08!"
 TEXT_ROOM = 64                     # the formatted text's buffer
 # State block (game.py): +0x2a0 the display found this frame (0 = none), +0x2a4 the prompt is up,
 # +0x2a8 the display's height as found; for tuning in a running game (0 = the built-in value):
-# +0x2ac scale (float), +0x2b0 height above it (float), +0x2b4 turn a frame (float), +0x2b8 colour.
+# +0x2ac scale (float), +0x2b0 height above it (float), +0x2b4 turn a frame (float), +0x2b8 colour,
+# +0x2bc/+0x2bd animation and frame of the pose, used when +0x2bf is not 0.
 S_DISPLAY, S_PROMPT, S_BASE_Z = 0x2A0, 0x2A4, 0x2A8
 S_SCALE, S_LIFT, S_SPIN, S_COLOUR = 0x2AC, 0x2B0, 0x2B4, 0x2B8
+S_POSE_ANIM, S_POSE_FRAME, S_POSE_ON = 0x2BC, 0x2BD, 0x2BF
 
 # pedestal: jumped to from the top of the update (r3 = the moby; LR is the moby loop's).
 # gc_frame: replaces bl HERO_MAIN; gc_tick(): the room, the prompt and the purchase.
@@ -161,6 +167,27 @@ gt_known:
     cmpwi 10, 0
     beq gt_model
     stw 10, 0x24(29)
+    lis 9, {POSE_HI}                # the pose: +0x50/+0x51 two frames, +0x52/+0x53 their animation
+    ori 9, 9, {POSE_LO}
+    stw 9, 0x50(29)
+    lbz 9, {S_POSE_ON}(31)
+    cmpwi 9, 0
+    beq gt_pose
+    lbz 9, {S_POSE_ANIM}(31)
+    stb 9, 0x52(29)
+    stb 9, 0x53(29)
+    lbz 9, {S_POSE_FRAME}(31)
+    stb 9, 0x50(29)
+    stb 9, 0x51(29)
+gt_pose:
+    lfs 0, {P_POSE_BLEND}(25)
+    stfs 0, 0x54(29)
+    lfs 0, {P_POSE_SPEED}(25)
+    stfs 0, 0x58(29)
+    lfs 0, {P_POSE_EASE}(25)
+    stfs 0, 0x5c(29)
+    mr 3, 29
+    bl {FRAME_POINTERS}
 gt_model:
     lfs 1, {P_SCALE}(25)
     lwz 9, {S_SCALE}(31)
@@ -359,7 +386,7 @@ def data(args):
 
 def pool(args):
     return dict(SCALE=DISPLAY_SCALE, LIFT=DISPLAY_LIFT, SPIN=SPIN, TWO_PI=6.283185307179586,
-                RANGE2=RANGE * RANGE, SHAKE=SHAKE[1])
+                RANGE2=RANGE * RANGE, SHAKE=SHAKE[1], POSE_BLEND=POSE[4], POSE_SPEED=1.0, POSE_EASE=0.1)
 
 
 def parts(args):
@@ -374,5 +401,6 @@ def fields(args, addr):
     bit = 31 - (CIRCLE.bit_length() - 1)        # rlwinm keeps bits mb..me (big-endian numbering): all but CIRCLE
     return dict(**pair("TEXT_BUY", at), **pair("TEXT_COST", cost), **pair("TEXT_GOT", got), **pair("TEXT_BUFFER", buffer),
                 ROOM_A=ROOMS[0], ROOM_B=ROOMS[1], DISPLAY_LAST=DISPLAY_COUNT - 1, SHOW_OFF=SHOW_CLASS - DISPLAY_FIRST,
+                POSE_HI=POSE[0] << 8 | POSE[1], POSE_LO=POSE[2] << 8 | POSE[3],
                 GOLD_HI=GOLD >> 16, GOLD_LO=GOLD & 0xFFFF, SHAKE_FRAMES=SHAKE[0],
                 CIRCLE_CLEAR_MB=(bit + 1) % 32, CIRCLE_CLEAR_ME=(bit - 1) % 32)
