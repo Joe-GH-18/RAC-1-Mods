@@ -10,6 +10,7 @@
     python patch.py --list             list the mods
     --mods boxbreaker,clank            only these mods (default without questions: all of them)
     --rc2 FOLDER                       Ratchet & Clank 2's data, if it is not found by itself
+    --rc1 FOLDER                       RC1's own data (rc1/ps3data), if it is not found by itself
 
 The file has to be the game's decrypted executable: the EBOOT.elf that RPCS3 writes with
 Utilities > Decrypt PS3 Binaries from the game's USRDIR/EBOOT.BIN, or RC1.ppu.elf decrypted
@@ -21,6 +22,8 @@ Some mods use data of Ratchet & Clank 2 (the Charge Boots' model, animation and 
 strafing's backwards walk). Nothing of it is in the patch files: it is taken from the player's
 own RC2, the folder rc2/ps3data next to RC1 in the Trilogy's USRDIR (found by itself next to the
 executable, or given with --rc2), and checked by its hash. Without it, those mods are left out.
+Golden Clank moves Giant Clank's model from two of RC1's levels to all of them: it is taken in
+the same way from RC1's own data, rc1/ps3data next to the executable (--rc1 otherwise).
 
 Needs nothing but Python 3 (and rc2data.py next to this file). Each mod is one patch file in
 patches/, which build.py writes (--export); see README.md.
@@ -121,7 +124,10 @@ class Patch:
                    header["size"], path)
 
     def needs_rc2(self):
-        return bool(self.fills)
+        return any(rc2data.game(fill[1]) == "rc2" for fill in self.fills)
+
+    def needs_rc1(self):
+        return any(rc2data.game(fill[1]) == "rc1" for fill in self.fills)
 
     def applied(self, data):
         """Is this mod in the executable? (Its slots are compared as they are: they are linked;
@@ -140,9 +146,9 @@ class Patch:
         return True
 
 
-def link(source, patches, rc2=None):
+def link(source, patches, rc2=None, rc1=None):
     """The unmodified executable with these mods in it. rc2: RC2's data (rc2data.Rc2), needed
-    by the mods that use it."""
+    by the mods that use it; rc1 likewise RC1's own data."""
     patches = sorted(patches, key=lambda patch: patch.order)
     out = bytearray(source)
     out.extend(bytes(max([len(out)] + [patch.size for patch in patches]) - len(out)))
@@ -175,11 +181,13 @@ def link(source, patches, rc2=None):
     for offset, word in words.items():
         struct.pack_into(">I", out, offset, word)
     for patch in patches:
-        if patch.fills and rc2 is None:
+        if patch.needs_rc2() and rc2 is None:
             raise ValueError(f"{patch.title} needs data of Ratchet & Clank 2 (see --rc2)")
+        if patch.needs_rc1() and rc1 is None:
+            raise ValueError(f"{patch.title} needs RC1's own data (see --rc1)")
         for offset, name, args, size, sha256 in patch.fills:
             try:
-                piece = rc2data.extract(rc2, name, args, sha256)
+                piece = rc2data.extract(rc1 if rc2data.game(name) == "rc1" else rc2, name, args, sha256)
             except rc2data.Missing as error:
                 raise ValueError(str(error))
             if len(piece) != size:
@@ -306,7 +314,7 @@ def named_mods(names, patches):
 
 def list_mods(patches):
     for number, patch in enumerate(patches, 1):
-        needs = " - needs Ratchet & Clank 2's data" if patch.needs_rc2() else ""
+        needs = " - needs Ratchet & Clank 2's data" if patch.needs_rc2() else " - needs RC1's rc1/ps3data folder" if patch.needs_rc1() else ""
         print(f"  [{number}] {patch.title} ({patch.name}){needs}\n      {patch.about}")
 
 
@@ -329,6 +337,20 @@ def find_rc2(source, given, interactive):
         return None
     try:
         return rc2data.Rc2(clean(folder))
+    except rc2data.Missing as error:
+        if given:
+            sys.exit(str(error))
+        return None
+
+
+def find_rc1(source, given):
+    """RC1's own data: the folder given, or rc1/ps3data next to the executable. -> rc2data.Rc2
+    for "rc1", or None to go without it."""
+    folder = given or rc2data.find(source, "rc1")
+    if not folder:
+        return None
+    try:
+        return rc2data.Rc2(clean(folder), "rc1")
     except rc2data.Missing as error:
         if given:
             sys.exit(str(error))
@@ -390,6 +412,7 @@ def main():
     ap.add_argument("--list", action="store_true", help="list the mods and quit")
     ap.add_argument("--patches", default=os.path.join(ROOT, "patches"), help="the folder with the patch files (default: patches/)")
     ap.add_argument("--rc2", help="Ratchet & Clank 2's data folder (rc2/ps3data of the Trilogy), for the mods that use it")
+    ap.add_argument("--rc1", help="RC1's own data folder (rc1/ps3data next to the executable), for the mods that use it")
     args = ap.parse_args()
 
     patches = load_patches(args.patches)
@@ -413,11 +436,15 @@ def main():
     if any(patch.needs_rc2() for patch in chosen or patches):
         rc2 = find_rc2(source, args.rc2, interactive)
         print(f"\nRatchet & Clank 2's data: {rc2.folder}" if rc2 else "\nRatchet & Clank 2's data: not used")
-    available = [patch for patch in patches if rc2 or not patch.needs_rc2()]
+    rc1 = None
+    if any(patch.needs_rc1() for patch in chosen or patches):
+        rc1 = find_rc1(source, args.rc1)
+        print(f"RC1's own data: {rc1.folder}" if rc1 else "RC1's own data: not found next to the executable (--rc1 FOLDER)")
+    available = [patch for patch in patches if (rc2 or not patch.needs_rc2()) and (rc1 or not patch.needs_rc1())]
     if chosen is not None:
         missing = [patch.title for patch in chosen if patch not in available]
         if missing:
-            sys.exit(f"{', '.join(missing)} need Ratchet & Clank 2's data (--rc2 FOLDER)")
+            sys.exit(f"{', '.join(missing)} need data that was not found (--rc2 FOLDER, --rc1 FOLDER)")
     else:
         if len(available) < len(patches):
             print("left out without it: " + ", ".join(patch.title for patch in patches if patch not in available))
@@ -430,7 +457,7 @@ def main():
         target = choose_target(source)
 
     try:
-        result = link(original, chosen, rc2)
+        result = link(original, chosen, rc2, rc1)
     except ValueError as error:
         sys.exit(str(error))
     if not all(patch.applied(result) for patch in chosen) or any(patch.applied(result) for patch in patches if patch not in chosen and patch.records):

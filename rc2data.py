@@ -1,9 +1,11 @@
-"""The Ratchet & Clank 2 data some mods use, taken from the player's own copy of the game.
+"""The Ratchet & Clank 2 data some mods use, taken from the player's own copy of the game, and
+the data of RC1's own levels that a mod moves to others (Giant Clank).
 
-Nothing of RC2 is in this repository or in the patch files. A patch file names what it needs
-(an extract's name and its arguments, and the SHA-256 of the result); build.py and patch.py
-extract it here from RC2's data folder, `rc2/ps3data` next to RC1 in the Trilogy's USRDIR, and
-check it against the hash.
+Nothing of either game is in this repository or in the patch files. A patch file names what it
+needs (an extract's name and its arguments, and the SHA-256 of the result); build.py and patch.py
+extract it here from the game's data folder, `rc2/ps3data` next to RC1 in the Trilogy's USRDIR
+for RC2 and `rc1/ps3data` next to the RC1 executable (Trilogy or PSN version) for RC1, and check
+it against the hash. RC1_EXTRACTS names the extracts of RC1's data.
 
 Python standard library only, like patch.py.
 """
@@ -26,20 +28,25 @@ BOOTS_PIXELS = 0x15580
 # definition's +0x1a is its sound in the bank; the level loader fills it in, so it is put here.
 SOUND_LEVEL = 5
 SOUND_DEFS = ((13, 24), (9, 20))
+# Giant Clank (class 0x1a3, only in RC1's levels 15 and 18), from level 18: the model, and the
+# textures of its mesh groups (mesh = model +0; +0 group count, +8 the groups, 0x10 bytes each
+# with the texture id at +0).
+GIANT_LEVEL, GIANT_CLASS = 18, 0x1A3
 
 
 class Missing(Exception):
-    """RC2's data is not there, or not the version the mods were made with."""
+    """The game's data is not there, or not the version the mods were made with."""
 
 
 class Rc2:
-    """RC2's data folder: the loose files, and PS3arc.psarc for the rest."""
+    """A game's data folder (RC2's, or RC1's with game "rc1"): the loose files, and PS3arc.psarc
+    for the rest."""
 
-    def __init__(self, folder):
-        self.folder = folder
+    def __init__(self, folder, game="rc2"):
+        self.folder, self.game = folder, game
         archive = os.path.join(folder, "PS3arc.psarc")
         if not os.path.isfile(archive):
-            raise Missing(f"{folder}: no PS3arc.psarc (this is not RC2's ps3data folder)")
+            raise Missing(f"{folder}: no PS3arc.psarc (this is not {game.upper()}'s ps3data folder)")
         self.archive = archive
         self.files, self.cache = None, {}
 
@@ -51,7 +58,7 @@ class Rc2:
                 with open(loose, "rb") as f:
                     self.cache[name] = f.read()
             else:
-                self.cache[name] = self._from_archive("/rc2/ps3data/" + name)
+                self.cache[name] = self._from_archive(f"/{self.game}/ps3data/" + name)
         return self.cache[name]
 
     def names(self):
@@ -191,8 +198,115 @@ def boots_pixels(rc2):
     return rc2.read("level1/vram.ps3")[at:at + BOOTS_PIXELS]
 
 
+def _giant(rc1):
+    """Giant Clank's model in level 18's engine.ps3 -> (the level file, offset, size): the size
+    reaches to the next model of the model table (+0: its offset; count, then {id, offset})."""
+    level = rc1.read(f"level{GIANT_LEVEL}/engine.ps3")
+    table = struct.unpack_from(">I", level, 0)[0]
+    count = struct.unpack_from(">I", level, table)[0]
+    models = dict(struct.unpack_from(">II", level, table + 4 + 8 * i) for i in range(count))
+    start = models[GIANT_CLASS]
+    end = min([offset for offset in models.values() if offset > start] + [len(level)])
+    return level, start, end - start
+
+
+def _giant_textures(rc1):
+    """The distinct texture ids of Giant Clank's mesh groups, in order, and each group's index in that list."""
+    level, start, size = _giant(rc1)
+    model = level[start:start + size]
+    mesh = struct.unpack_from(">I", model, 0)[0]
+    count, groups = struct.unpack_from(">I", model, mesh)[0], struct.unpack_from(">I", model, mesh + 8)[0]
+    ids = [struct.unpack_from(">I", model, groups + 0x10 * i)[0] for i in range(count)]
+    distinct = list(dict.fromkeys(ids))
+    return distinct, [distinct.index(i) for i in ids]
+
+
+def giant_model(rc1):
+    """Giant Clank's model, its groups' texture ids cleared (the mod puts its own entries there)
+    and without its 9 sounds (header +0xd the count, +0x28 the definitions): their places in the
+    sound bank are filled in by the loader of his own levels only, and his animations playing
+    them elsewhere crashed the sound update (0x15be68)."""
+    level, start, size = _giant(rc1)
+    model = bytearray(level[start:start + size])
+    model[0xD] = 0
+    struct.pack_into(">I", model, 0x28, 0)
+    mesh = struct.unpack_from(">I", model, 0)[0]
+    count, groups = struct.unpack_from(">I", model, mesh)[0], struct.unpack_from(">I", model, mesh + 8)[0]
+    for i in range(count):
+        struct.pack_into(">I", model, groups + 0x10 * i, 0)
+    return bytes(model)
+
+
+def giant_textures(rc1):
+    """Giant Clank's textures: the group count, each group's texture (u8 each, padded to 8),
+    then the texture entries with +0 the pixels' offset in giant_pixels."""
+    distinct, uses = _giant_textures(rc1)
+    level = rc1.read(f"level{GIANT_LEVEL}/engine.ps3")
+    table = struct.unpack_from(">I", level, 0x54)[0]
+    out = bytearray(bytes([len(uses)] + uses).ljust(8, b"\0"))
+    at = 0
+    for texture in distinct:
+        entry = bytearray(level[table + 0x24 * texture:table + 0x24 * texture + 0x24])
+        struct.pack_into(">I", entry, 0, at)
+        at += _pixels_size(level, table, texture)
+        out += entry
+    return bytes(out)
+
+
+def _pixels_size(level, table, texture):
+    """A texture's pixels run to where the next texture's begin (the table is in vram.ps3 order)."""
+    return struct.unpack_from(">I", level, table + 0x24 * (texture + 1))[0] - struct.unpack_from(">I", level, table + 0x24 * texture)[0]
+
+
+def giant_pixels(rc1):
+    """The pixels of Giant Clank's textures, one after the other (each 0x80-aligned in vram.ps3, so kept so)."""
+    distinct, _ = _giant_textures(rc1)
+    level, vram = rc1.read(f"level{GIANT_LEVEL}/engine.ps3"), rc1.read(f"level{GIANT_LEVEL}/vram.ps3")
+    table = struct.unpack_from(">I", level, 0x54)[0]
+    out = bytearray()
+    for texture in distinct:
+        at = struct.unpack_from(">I", level, table + 0x24 * texture)[0]
+        out += vram[at:at + _pixels_size(level, table, texture)]
+    return bytes(out)
+
+
+def giant_part(rc1, ranges):
+    """Giant Clank's index buffer with only the triangles of the bones in ranges ([first, last]
+    pairs) left: the others are made empty (all three corners the same vertex). A vertex counts
+    for the bone with its largest weight (vertices of 0x28 bytes: +0x20 four weights, +0x24 four
+    bones), a triangle for the bone most of its corners count for. Model +0: mesh, mesh +0x10 and
+    +0x14 the vertex and index buffers (u16 indices, model offsets), mesh +0 the group count and
+    +8 the groups {texture, first index, index count, flags}."""
+    level, start, size = _giant(rc1)
+    model = level[start:start + size]
+    mesh = struct.unpack_from(">I", model, 0)[0]
+    vertices, indices = struct.unpack_from(">II", model, mesh + 0x10)
+    count, groups = struct.unpack_from(">I", model, mesh)[0], struct.unpack_from(">I", model, mesh + 8)[0]
+    total = max(sum(struct.unpack_from(">II", model, groups + 0x10 * g + 4)) for g in range(count))
+    index = list(struct.unpack_from(f">{total}H", model, indices))
+
+    def inside(v):
+        at = vertices + 0x28 * v
+        weights, bones = model[at + 0x20:at + 0x24], model[at + 0x24:at + 0x28]
+        bone = bones[max(range(4), key=lambda i: weights[i])]
+        return any(first <= bone <= last for first, last in ranges)
+
+    for t in range(0, total - total % 3, 3):
+        if sum(inside(v) for v in index[t:t + 3]) < 2:
+            index[t + 1] = index[t + 2] = index[t]
+    return struct.pack(f">{total}H", *index)
+
+
 EXTRACTS = dict(animation=animation, charge_sounds=charge_sounds, boots_model=boots_model,
-                boots_texture_entry=boots_texture_entry, boots_pixels=boots_pixels)
+                boots_texture_entry=boots_texture_entry, boots_pixels=boots_pixels,
+                giant_model=giant_model, giant_textures=giant_textures, giant_pixels=giant_pixels,
+                giant_part=giant_part)
+RC1_EXTRACTS = {"giant_model", "giant_textures", "giant_pixels", "giant_part"}
+
+
+def game(name):
+    """The game an extract is taken from: "rc1" or "rc2"."""
+    return "rc1" if name in RC1_EXTRACTS else "rc2"
 
 
 def extract(rc2, name, args, sha256=None):
@@ -202,12 +316,12 @@ def extract(rc2, name, args, sha256=None):
     except (struct.error, ValueError, IndexError, KeyError) as error:
         raise Missing(f"{rc2.folder}: cannot extract {name} ({error})")
     if sha256 and hashlib.sha256(data).hexdigest() != sha256:
-        raise Missing(f"{rc2.folder}: {name} is not what the mods expect (another version of RC2?)")
+        raise Missing(f"{rc2.folder}: {name} is not what the mods expect (another version of {rc2.game.upper()}?)")
     return data
 
 
-def find(near):
-    """RC2's data folder for an RC1 executable at near: rc2/ps3data in its folder (the Trilogy's
-    USRDIR), or None."""
-    folder = os.path.join(os.path.dirname(os.path.abspath(near)), "rc2", "ps3data")
+def find(near, game="rc2"):
+    """A game's data folder for an RC1 executable at near: rc2/ps3data (or rc1/ps3data) in its
+    folder (the Trilogy's USRDIR, or the PSN version's for RC1), or None."""
+    folder = os.path.join(os.path.dirname(os.path.abspath(near)), game, "ps3data")
     return folder if os.path.isfile(os.path.join(folder, "PS3arc.psarc")) else None

@@ -325,8 +325,8 @@ def main():
     units, patches = build(args, elf)
     chosen = [patch for patch in patches if patch.name in args.mods]
     try:
-        out = patcher.link(elf.data, chosen, rc2_source())
-        patcher.link(elf.data, patches, rc2_source())        # the patch files must go together as well
+        out = patcher.link(elf.data, chosen, rc2_source(), rc2_source("rc1"))
+        patcher.link(elf.data, patches, rc2_source(), rc2_source("rc1"))   # the patch files must go together as well
     except ValueError as error:
         sys.exit(str(error))
     if undo(out, elf.data, patches) != elf.data:
