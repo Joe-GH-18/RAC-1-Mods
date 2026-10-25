@@ -239,6 +239,33 @@ def giant_model(rc1, cls=GIANT_CLASS):
     return bytes(model)
 
 
+def giant_sounds(rc1, classes):
+    """The sound definitions of these classes' models in level 18 (Giant Clank's 9, his missile's
+    1), one after the other, each with its sound in level 18's bank at +0x1a (the level loader
+    puts it there from engine.ps3 header +0x48: {u16 offset, u16 count} a model in the model
+    table's order from +8, to u32 bank sounds), then from the next 16 bytes that bank cut down to
+    their samples (sound_bank)."""
+    level = rc1.read(f"level{GIANT_LEVEL}/engine.ps3")
+    table = struct.unpack_from(">I", level, 0)[0]
+    count = struct.unpack_from(">I", level, table)[0]
+    models = [struct.unpack_from(">II", level, table + 4 + 8 * i) for i in range(count)]
+    remap = struct.unpack_from(">I", level, 0x48)[0]
+    defs = []
+    for cls in classes:
+        index, model = next((i, at) for i, (c, at) in enumerate(models) if c == cls)
+        n = level[model + 0xD]
+        at = model + struct.unpack_from(">I", level, model + 0x28)[0]
+        offset, listed = struct.unpack_from(">HH", level, remap + 8 + 4 * index)
+        if listed != n:
+            raise ValueError(f"class {cls:#x}: {n} sounds, {listed} in the level's list")
+        for k in range(n):
+            d = bytearray(level[at + 32 * k:at + 32 * k + 32])
+            struct.pack_into(">H", d, 0x1A, struct.unpack_from(">I", level, remap + offset + 4 * k)[0])
+            defs.append(bytes(d))
+    head = b"".join(defs)
+    return head + bytes(-len(head) % 16) + sound_bank(rc1, GIANT_LEVEL, defs)
+
+
 def giant_textures(rc1, cls=GIANT_CLASS):
     """Giant Clank's textures (or cls's): the group count, each group's texture (u8 each, padded
     to 8), then the texture entries with +0 the pixels' offset in giant_pixels."""
@@ -632,9 +659,11 @@ EXTRACTS = dict(animation=animation, charge_sounds=charge_sounds, boots_model=bo
                 boots_texture_entry=boots_texture_entry, boots_pixels=boots_pixels,
                 giant_model=giant_model, giant_textures=giant_textures, giant_pixels=giant_pixels,
                 giant_part=giant_part, giant_ball_vertices=giant_ball_vertices, giant_ball_indices=giant_ball_indices,
-                giant_tube_vertices=giant_tube_vertices, giant_tube_indices=giant_tube_indices, clank_gold_eyes=clank_gold_eyes)
+                giant_tube_vertices=giant_tube_vertices, giant_tube_indices=giant_tube_indices, clank_gold_eyes=clank_gold_eyes,
+                giant_sounds=giant_sounds)
 RC1_EXTRACTS = {"giant_model", "giant_textures", "giant_pixels", "giant_part", "giant_ball_vertices", "giant_ball_indices",
-                "giant_tube_vertices", "giant_tube_indices", "clank_gold_eyes"}
+                "giant_tube_vertices", "giant_tube_indices", "clank_gold_eyes",
+                "giant_sounds"}
 
 
 def game(name):

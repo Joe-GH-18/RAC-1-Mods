@@ -80,6 +80,13 @@ BORROWED_TEXT = 0x5301             # "Gold Weapon purchase" (the table has it tw
 MESSAGE_INDEX = 0x92
 BUY_SOUND = 24                     # Ratchet's sound definition 24, the weapon levels' level-up sound
 GOLD = 0x0C64B0                    # 00BBGGRR, the weapon levels' gold
+# A moby's colour (+0x38) is the level's light on it (00BBGGRR, set every frame; 0x292929 by day on
+# Novalis), so a fixed gold there was a light of its own: Clank and the parts glowed the same in a
+# dark room as in the sun (the user: "Why does the golden clank look so weird with the lighting").
+# The gold is the light Ratchet stands in (his moby's +0x38) times GOLD_TINT, per channel (red,
+# green, blue, in 256ths, at most 255); compared live on Clank, 1.37/0.78/0.09 was brass, 2.7/1.56/0.2
+# bright gold.
+GOLD_TINT = (563, 320, 38)
 DISPLAY_SCALE = 0.3
 DISPLAY_LIFT = 0.0                 # added to the display's height
 POSE = (1, 2, 1, 1, 0.4)           # frame, next frame, their animations, the blend between them: folded, eyes to the front
@@ -110,7 +117,13 @@ TEXT_HINT = b"Press \x18 + \x19 to switch \x0cGiant Clank\x08 on and off"
 # Clank (SCENE_BOND), the purchase's sound and shake and the switch's glow, the text at TEXT, at
 # GIANT Giant Clank mode comes on (the legs grow under him) and at PUNCH he punches; at the end the
 # game's camera is back and the hint (TEXT_HINT) shows.
-SCENE_CAM = ((0, 4.2, -0.25, -0.45, 1.3, 0.75), (80, 3.0, -0.10, -0.75, 1.5, 0.95),
+# Ratchet turns his back to the display as the scene starts (the user: "when i get golden clank
+# ratchet should be facing away from the glass container, the camera is also stuck, so it can not
+# be properly seen"; SCENE_TURN, through atan2 of the way from the display to him): the stream
+# flies into Clank on his back, and the camera keys, which turn from behind him, keep to the room
+# (from -1.6, beside him, round to -3.9, ahead of him; behind him, 0, is the dome).
+SCENE_TURN = 1
+SCENE_CAM = ((0, 4.2, -0.25, -3.59, 1.3, 0.75), (80, 3.0, -0.10, -3.89, 1.5, 0.95),
              (125, 4.2, -0.15, -1.6, 1.2, 0.45), (150, 3.2, -0.05, -2.5, 1.1, 0.0),
              (190, 4.6, 0.12, -3.1, 1.7, 0.0), (260, 5.6, 0.08, -3.4, 2.0, 0.0), (320, 6.0, 0.05, -3.6, 2.0, 0.0))
 SCENE_SHOW = ((0, 0.001, 0.3, 0.02), (70, 0.6, 0.33, 0.25), (100, 0.75, 0.33, 0.45), (128, 0.9, 0.01, 0.6))
@@ -291,8 +304,13 @@ PACK_PART = 0x118C
 # should follow ratchet when high jumping you cannot see a thing"). In a jump in the mode the mod
 # eases it CAM_JUMP[2] of the way a frame towards CAM_JUMP[0] + CAM_JUMP[1] times his height above
 # the ground (hero +0x2d8); after it the game brings its own back.
+# The camera's height counts from where he left the ground, not from the ground under him: over a
+# drop the ground is far below or none at all (+0x2d8 reads 0), and the camera climbed 2 + 0.9 x
+# the drop (the user: "the camera going so far on top of the character"; read live after a jump off
+# a ledge of level 14: him at 36, the camera at 68). So his height is taken over the last height he
+# stood at (kept at G_CAM_BASE while not in a jump or a hover), never below 0, at most CAM_JUMP[3].
 CAMERA_DATA, CAMERA_DISTANCE, CAMERA_HEIGHT = 0x70, 0x15C, 0x160
-CAM_JUMP = (2.0, 0.9, 0.3)
+CAM_JUMP = (2.0, 0.9, 0.3, 8.0)
 HERO_GROUND = 0x2D8
 ZOOM, ZOOM_EASE = 7.5, 0.08
 # A view for looking at the parts (the user: "look also from top perspective, how the tubes
@@ -354,6 +372,14 @@ JOINT_CACHE = 0x92958              # (r3 moby, 0 = the hero's): the joints' matr
 FX_SLOTS, FX_SLOT_COUNT, FX_HANDLE, FX_HANDLE_END = 0xA2C440, 6, 0xD00, 0xD14
 SEAT_AT = (1, (-0.066, -0.016, 0.733))
 ANIM_FIELDS, ANIM_FIELDS_SIZE = 0x50, 0x30
+# Those fields hold two list heads besides the animation: the joint effects (+0x60) and the joint
+# manipulators (+0x64, next at +8). Put back as they were kept, they undid what the game had done
+# to the lists meanwhile: after a death the respawn links his manipulators again, and the kept head
+# closed the list into a ring that the moby loop (0xf3618) walked for ever (the user: "when i die,
+# the games seems to crash or softlock"; read live: his 16 manipulators, the last one's next the
+# first; and so, most likely, the joint effects' empty list of the freeze above). They are kept
+# live when the fields go back (LIST_HEADS).
+LIST_HEADS = (0x60, 0x64)
 COS, SIN = 0x5E8078, 0x5E8128      # (f1 radians) -> f1
 # The moves, Square, Circle and Triangle in the mode: each grows one of his parts out of Clank,
 # plays its animation, goes over to his idle and shrinks back into Clank (the punch first, then
@@ -381,8 +407,11 @@ COS, SIN = 0x5E8078, 0x5E8128      # (f1 radians) -> f1
 # ends to quickly".)
 # The punch ended "so abruptly": it held its last pose until frame 30 and then went to the idle
 # over 4 frames; now the idle follows at once, blended over "blend" frames, and the part shrinks
-# over "shrink" frames. While a move's "repeat" button is held, it plays again from its frame B
-# when it gets to "idle" (the user: "if I hold the missile button it should continue shooting").
+# over "shrink" frames. While a move's "repeat" button is held, it plays again from its action
+# frame when it gets to "idle" (the user: "if I hold the missile button it should continue shooting").
+# (It went back to B + ARM_DELAY, which the count after it made one frame past the missiles' action
+# frame: holding Circle shot one volley, the user: "it is not shooting multiple rockets, just one is
+# shot". The part has to be fully grown by the action frame: asserted below MOVE_TABLE.)
 # MOVE_TABLE: the part (1 + PARTS index, -1 none), its animation, sided (1: part, animation and Clank's bone
 # with the side, 0 left 1 right, taken in turn; left and the anchor's y mirrored), F, the action
 # frame, idle from, B (to grow), Clank's bones hidden (left, right; -1 none), its scale, the spot
@@ -420,6 +449,7 @@ MOVE_TABLE = (
     (-1, BOMB_ANIM, 0, 72, 45, 72, 6, (-1, -1), 0.25,                       # Triangle: the bomb (no part:
      (-0.3, 0.0, 0.8), (-0.28, 0.0, 5.6), 0.0, 0.8, 0, 10, 10, -1, 0),       # "remove also the torso")
 )
+assert all(move[4] >= move[6] + ARM_DELAY for move in MOVE_TABLE if move[13])   # a repeat's action: the part grown
 MOVE_BUTTONS = (0x80, 0x20, 0x10)  # PAD bits: Square, Circle, Triangle
 SQUARE, TRIANGLE = MOVE_BUTTONS[0], MOVE_BUTTONS[2]
 # The punch: a sphere ahead of Ratchet gets a damage descriptor as the Walloper's punch makes one
@@ -565,6 +595,86 @@ FIRE, SPARK = 0x12E3E8, 0x1268F8
 FIRE_LOOK = (25000.0, 300.0, 0.98, 0.02, 0.85)  # f1..f5 as the Pyrocitor gives them, but f4 (growth)
 SPARK_COLOURS, SPARK_FAR = (0x4F007FFF, 0x1FFFFFFF), 10000.0
 HERO_MOVED = 0x100                 # the movement he made this frame (x, y)
+# One jump in the mode, no double jump (the user: "ratchet should be unable to perform a double
+# jump, just a single jump"; a second X still hovers, their pick: "Hover, no extra height"). In
+# his air states the transition function (0xbe228) takes a fresh X to the double jump, state 0xe
+# (0xc4e58..0xc4f08: not from 0xe itself, with +0x20a8 clear, +0x4af set and enough frames into
+# the jump), and else to the glide's test (0xc4f0c: the Heli-Pack owned, X held, high enough over
+# the ground: state 8, the hover). In the mode DOUBLE_JUMP_HOOK goes to the glide's test at once.
+DOUBLE_JUMP_HOOK, DOUBLE_JUMP_WORD = 0xC4E64, 0x887320A8   # lbz r3, 0x20a8(r19) (r19 = hero; r3 free)
+DOUBLE_JUMP_BACK, GLIDE_TEST = DOUBLE_JUMP_HOOK + 4, 0xC4F0C
+# No flips either (the user: "remove also sideflips", "and backflips"): the side and back flips
+# are state 0xb, set where a jump comes with a strafe button held (pad 0xa) and a flip type from
+# 0xa1e78 (the jump choosers 0xa4950 and 0xa56d8, the transition function at 0xc3ff4). In the mode
+# set_state takes them for his plain jump (NO_FLIPS_HOOK, at its top). The crouch's jumps stay (the
+# user: "Keep high jump, add flames"): PACK_JUMPS, the high jump (0xf with the Heli-Pack, 0xd with
+# the Thruster-Pack, set only by the crouch's chooser 0xa56d8) and the long jump on the run (0xa,
+# 0x10). In them the feet's flames burn as in the hover (FLAME_STATES), and the pack's sound is
+# off: the long jump's (Ratchet's model sound 0x36, from ~0.1 s into 0xa, seen in the voice table)
+# comes from no call of the hero code with it, so it is taken for a sound of his animation: in the
+# mode, in PACK_JUMPS, JUMP_SOUNDS_HOOK (in 0x8bc30, which plays the sounds of the hero moby's
+# animation: those at its frames, its table behind the frame pointers, then its looping one,
+# moby +0x7c, from the animation's +0x11) leaves out the frames' sounds and the looping one.
+FLIP_STATES, PLAIN_JUMP = (0xB,), 0x7
+PACK_JUMPS = (0xF, 0xD, 0xA, 0x10)
+FLAME_STATES = HOVER_STATES + PACK_JUMPS
+JUMP_SOUNDS_HOOK, JUMP_SOUNDS_WORD = 0x8C070, 0x2C1E0000   # cmpwi r30, 0 (r27 = hero, r31 = his moby; r3, r4 free)
+JUMP_SOUNDS_BACK, JUMP_SOUNDS_SKIP = JUMP_SOUNDS_HOOK + 4, 0x8C150
+# The flames have a sound of their own (the user: "there is no sound can you maybe take thruster
+# sound but pitch it a bit down"): the Thruster-Pack's hover whirr, Ratchet's model sound 0x12 (a
+# looping one: its definition's +0x18 is set, so it is played with flag 4), lower. A model's sound
+# definitions (model +0x28, 0x20 bytes each, +0xd their count) give the voice a pitch at random
+# between +0x10 and +0x14 (PLAY_SOUND_DEF 0x15d0c8 -> voice +0x84; 0 for this one), which the
+# sound update hands to the sound library as it starts the voice (0x15ca84). So gc_flame_sound
+# copies the definition into GIANT and plays the copy, its pitch range FLAME_SOUND's pitch, at
+# Ratchet (as PLAY_MODEL_SOUND does: the voice follows his moby, +0x88), while the flames burn,
+# and stops it (SOUND_STOP) when they do not. FLAME_SOUND: on, the model sound, the pitch (the
+# definitions' unit; the Thruster-Pack's burst, sound 1, takes -508..1270), the volume (r7 of
+# PLAY_SOUND_DEF, 0x400 as the game gives it).
+FLAME_SOUND = (1, 0x12, -400, 0x400)
+SOUND_STOP = 0x15CDB0              # (r3 voice)
+NO_FLIPS_HOOK, NO_FLIPS_WORD = 0xB72DC, 0x2C830064   # cmpwi cr1, r3, 0x64 (r27 = hero; r0, r5 free)
+NO_FLIPS_BACK = NO_FLIPS_HOOK + 4
+# No Heli-Pack sound in the mode (the user: "fix the sound, so no helipack sound is played"; the
+# feet's flames fly him). The hover's state code (from 0xb40a0, in HERO_UPDATE) starts the pack's
+# whirr on one of his looping sound channels (0xa0ae0(channel, moby, sound), the voice at hero
+# +0x2218 + 4 * channel), by the pack worn (0x7f41c(3)): the Heli-Pack's Ratchet's sound 2 on
+# channel 3, the Thruster-Pack's 0x12 on channel 4. In the mode HOVER_SOUND_HOOK jumps past it.
+HOVER_SOUND_HOOK, HOVER_SOUND_WORD = 0xB40A0, 0x38600003   # li r3, 3 (r25 = hero)
+HOVER_SOUND_BACK, HOVER_SOUND_SKIP = HOVER_SOUND_HOOK + 4, 0xB41CC
+# His own sounds (the user: "add the correct sounds, so there is a bomb sound for the bomb shot, a
+# missile sound, for shooting and exploding and one for jumping", then "the fist punch also a sound
+# and also a walking sound"). All of his come from his animations' frame sounds (an animation's +0x10
+# frame count, +0x12 sound count, from +0x1c + 4 * frames {u16 definition, u16 time in 1/16 frames};
+# played by the moby loop's animation step 0xf98d8, the hero's 0x8c0a4), none from code: walk 3:
+# 2 at 0.5, 3 at 12 (his steps); jump 6: 4 at 3.5, 7 at 4; missiles 8: 5 at 0.5 and 4; punch 9/10:
+# 8 at 2.5 (the swing), then steps; bomb 12: 0 at 1.75. The missile (class 0x100) has one, its blast
+# (0 from its update at 0xef5f0, with the camera shake); the bomb's update plays none. Their samples
+# are in levels 15 and 18 only, so rc2data.giant_sounds takes his 9 and the missile's definitions
+# from level 18 with their sounds in its bank and the bank cut down to their samples; gc_sounds
+# loads it (BANK_LOAD_FROM_MEM, as the Charge Boots' bank) once his model is in, points the
+# definitions at it and gives them to the models: the missile's, and of his parts only the legs'
+# (SOUND_PARTS), so the walk and the jump sound from the legs' animations. The fist is posed from
+# code and the bomb has no part, and the missiles leave on the move's action frame, not at his
+# animation's times: each move plays one of his definitions at a frame of its own (MOVE_SOUNDS:
+# definition, frame; gc_giant_sound, at Ratchet).
+GIANT_SOUND_COUNT = 9
+SOUND_PARTS = (PART_LEGS,)
+MOVE_SOUNDS = ((8, 11), (5, 10), (0, 45))   # the punch's swing as the strike starts, a volley, the throw
+SOUND_DEFS = GIANT_SOUND_COUNT + 1         # and the missile's
+SOUNDS_BANK_OFF = SOUND_DEFS * 0x20 + -(SOUND_DEFS * 0x20) % 0x10
+BANK_LOAD_FROM_MEM = 0x60AE8C       # (r3 bank image, 16-aligned, writable) -> handle, 0 on failure
+# The Heli-Pack in the mode, whichever pack he wears (the user: "clank always needs to be in heli
+# pack form", then "Heli-Pack even if not equipped"). The back is slot 3 of the equipment slots
+# (0x85b30; hero +0x1180 the pack, +0x1184 backpack Clank, PACK_ITEM 2 Heli, 3 Thruster, 4 Hydro),
+# which changes the pack when its request (PACK_REQUEST) is another item, as the pause menu asks
+# for one (0x1130d4). Each frame (gc_pack) in the mode a Thruster-Pack is asked to be the Heli-Pack
+# (when that is owned: UNLOCKS + item), and with the mode off (out of water) the pack he wore is
+# asked back (S_PACK_BACK). (The slot keeps the pack asked for as its own in a word of the save,
+# 0x969c88: saved with the mode on, the game comes back with the Heli-Pack.)
+PACK_ITEM, PACK_REQUEST = 0x11A8, 0x20C4
+HELI_PACK, THRUSTER_PACK = 2, 3
+UNLOCKS = 0x96C140                 # a byte per item: owned
 # Ratchet rides the legs (the user: "The movement while walking looks a bit clunky on ratchet
 # because he is completely still"): his walk lifts and drops Giant Clank's hips with every step
 # (filmed from the side at 60 fps: the boots floated over the pelvis at the long strides and sank
@@ -680,6 +790,7 @@ STRUT_JOINTS = ((47, COLUMN_TURN, (0.85, 1.1, 0.85), (209.6, 718.0, 286.9)),
                 (67, (-STRUT_TURN[0],) + STRUT_TURN[1:], (0.55, 1.3, 0.55), (209.6, -718.0, 286.9)))
 LEG_MOBY = 0x1184
 STATE_TYPE, STATE_TYPE_JUMP, STATE_TYPE_HOVER = 0x208C, 4, 5
+FALL_STATE = 0x6                   # falling (a hover ends in it: 8 -> 6), state type not 4 or 5
 # In water he is Ratchet again, and L3 + R3 do not switch there (the user: "if I get into water
 # make ratchet go back to normal an he should be unable to go golden clank form in water"): set_state
 # gives the state type 0x12 to his two water states only, 0x36 (swimming) and 0x37 (followed
@@ -710,6 +821,11 @@ MELEE_UP = 1.3                     # its direction's height (+0x280)
 # left his run at 5.7 units/s: the walk's target speed +0x190 does not come from it.
 RUN = 2.0
 WALK_STATE = 0x2
+# And he moves faster in the air (the user: "increase his air speed also double, i mean the moving
+# speed not gravity"): every jump and hover state builds his velocity through BUILD_VELOCITY each
+# frame too, so in the state types of a jump (4) and a hover (5) the speed is taken AIR times;
+# their heights and gravity are not touched.
+AIR = 2.0
 # He stands for the punch and the bomb (the user: "think about restricting movement while punching
 # and golden bomb"): his own states for them (0x60 at 0xb5f1c, 0x61 at 0xb6524) set the target
 # speed +0x190 to 0 and still turn him with the stick (0x9b380, 0x9ba88). Here the walking speed is
@@ -732,14 +848,14 @@ VELOCITY_BACK = VELOCITY_HOOK + 4
 # record of 0x10 bytes (gc_show): +0 the moby, +4 the model it was given, +8 its animation;
 # +0x2f0 the test moby's, +0x300 the legs', +0x310 the move's part. +0x320 frames into a move (0
 # = none), +0x324 the side (0 left, 1 right), +0x328 which move (MOVE_TABLE), +0x32c the moves'
-# buttons held, +0x330 frames until the bomb is ready.
+# buttons held, +0x330 frames until the bomb is ready, +0x334 the pack to ask back (0 = none).
 S_DISPLAY, S_PROMPT, S_BASE_Z = 0x2A0, 0x2A4, 0x2A8
 S_SCALE, S_LIFT, S_SPIN, S_COLOUR = 0x2AC, 0x2B0, 0x2B4, 0x2B8
 S_POSE_ANIM, S_POSE_FRAME, S_POSE_ON = 0x2BC, 0x2BD, 0x2BF
 S_MODE, S_CHORD, S_CHORD_LEFT, S_MOVES = 0x2C0, 0x2C4, 0x2C8, 0x2CC
 S_GROW, S_BASE, S_BURST, S_GLOW = 0x2D0, 0x2D4, 0x2D8, 0x2DC
 S_MODEL, S_FRAME, S_TEST_PART, S_LEGS, S_FIST = 0x2E0, 0x2E4, 0x2F0, 0x300, 0x310
-S_PUNCH, S_SIDE, S_MOVE, S_HELD, S_BOMB_WAIT = 0x320, 0x324, 0x328, 0x32C, 0x330
+S_PUNCH, S_SIDE, S_MOVE, S_HELD, S_BOMB_WAIT, S_PACK_BACK = 0x320, 0x324, 0x328, 0x32C, 0x330, 0x334
 PART_RECORDS = (S_TEST_PART, S_LEGS, S_FIST)
 # GIANT, the writable block: +0x00 BURST and +0x38 SMOKE (the layout PUFFS), +0x70 CHORD_FRAMES,
 # +0x74 GROW_FRAMES, +0x78 GIANT_SCALE (float), +0x7c/+0x80 GIANT_SOUNDS, +0x84/+0x88 GIANT_SHAKE
@@ -754,7 +870,7 @@ PART_RECORDS = (S_TEST_PART, S_LEGS, S_FIST)
 # = none), +0x1f4 the missile's model (0 = not installed), +0x1f8 MISSILES, +0x1fc MISSILE_SIZE, +0x200 BOMB_AT;
 # +0x210 the manipulator; +0x250 MOVE_TABLE, 0x60 bytes each (M_...); +0x370 BOMB_COOLDOWN; +0x380
 # the gold eyes' texture entry (0 = not installed), +0x384 the level's own; +0x3c0 JUMP (float),
-# JUMP_ANIM, +0x3c8 CAM_JUMP (floats); +0x3e0 CLANK_LEG: on, bone, place (floats); +0x3f4 the moby
+# JUMP_ANIM, +0x3c8 CAM_JUMP (floats), +0x3d8 the height he last stood at; +0x3e0 CLANK_LEG: on, bone, place (floats); +0x3f4 the moby
 # its manipulator is on (0 = none); +0x400 that manipulator; +0x440 CLANK_STILL, +0x44c the moby
 # whose animation fields are kept (0 = none), +0x450 those fields; +0x480 CLANK_SEAT; +0x490
 # PACK_STILL, the same layout; +0x3f8 LEG_MOBY; +0x4d0 STRUTS: on, animation, +0x4e0 the two places;
@@ -775,8 +891,9 @@ G_CHAIN_LEGS, G_BALLS, G_BALL_ANIM, G_BALL_COLOUR, G_PART_COLOUR = 0x160, 0x180,
 G_ARM_MOBY, G_MISSILE_MODEL, G_MISSILE_AHEAD, G_BOMB_AT, G_MANIP, G_MOVES = 0x1F0, 0x1F4, 0x1F8, 0x200, 0x210, 0x250
 G_MISSILE_SIZE = 0x1FC
 M_PART, M_ANIM, M_SIDED, M_FRAMES, M_ACTION, M_IDLE, M_GROW, M_BONES = 0x00, 0x04, 0x08, 0x0C, 0x10, 0x14, 0x18, 0x1C
-M_SCALE, M_SPOT, M_ANCHOR, M_TURN, M_RATE, M_REPEAT, M_BLEND, M_SHRINK, M_PIN, M_BALLS, MOVE_SIZE = 0x24, 0x28, 0x34, 0x40, 0x44, 0x48, 0x4C, 0x50, 0x54, 0x58, 0x60
+M_SCALE, M_SPOT, M_ANCHOR, M_TURN, M_RATE, M_REPEAT, M_BLEND, M_SHRINK, M_PIN, M_BALLS, M_SOUND, MOVE_SIZE = 0x24, 0x28, 0x34, 0x40, 0x44, 0x48, 0x4C, 0x50, 0x54, 0x58, 0x5C, 0x60
 G_BOMB_COOLDOWN, G_EYE_ENTRY, G_EYE_OWN, G_JUMP, G_JUMP_ANIM, G_CAM_JUMP = 0x370, 0x380, 0x384, 0x3C0, 0x3C4, 0x3C8
+G_CAM_BASE = G_CAM_JUMP + 0x10                 # the height he last stood at
 G_LEG, G_LEG_BONE, G_LEG_AT, G_LEG_MOBY, G_LEG_MANIP = 0x3E0, 0x3E4, 0x3E8, 0x3F4, 0x400
 G_CLANK_STILL, G_CLANK_ANIM, G_CLANK_FRAME, G_CLANK_KEPT, G_CLANK_FIELDS = 0x440, 0x444, 0x448, 0x44C, 0x450
 G_SEAT, G_SEAT_TURN, G_PACK_STILL, G_LEG_TARGET = 0x480, 0x484, 0x490, 0x3F8
@@ -826,6 +943,10 @@ G_SCENE_CAM = G_SCENE + 0x50                   # SCENE_CAM, 6 floats a key
 G_SCENE_SHOW = G_SCENE_CAM + 0x18 * len(SCENE_CAM)          # SCENE_SHOW, 4 floats a key
 G_SCENE_RING = G_SCENE_SHOW + 0x10 * len(SCENE_SHOW)        # SCENE_RING (gc_sparks), SCENE_STREAM, SCENE_BOND (PUFFS)
 G_SCENE_STREAM, G_SCENE_BOND, G_SCENE_BOND_SPARKS = G_SCENE_RING + 0x38, G_SCENE_RING + 0x70, G_SCENE_RING + 0xA8
+G_FLAME_SOUND = G_SCENE_BOND_SPARKS + 0x38     # FLAME_SOUND: on, sound, pitch, volume; +0x10 its voice (-1 none),
+                                               # +0x20 the copy of its definition
+G_SOUNDS = G_FLAME_SOUND + 0x40                # his sounds (gc_sounds): 0 not yet, 1 in, -1 the bank did not load
+G_AIR = G_SOUNDS + 4                           # AIR (float)
 
 # pedestal: jumped to from the top of the update (r3 = the moby; LR is the moby loop's).
 # gc_frame: replaces bl HERO_MAIN; gc_tick(): the room, the prompt and the purchase.
@@ -1106,6 +1227,18 @@ gt_shown:
     stfs 0, {G_SCENE} + 0x14(9)
     lfs 0, 0x18(29)
     stfs 0, {G_SCENE} + 0x18(9)
+    li 9, {SCENE_TURN}              # his back to the display
+    cmpwi 9, 0
+    beq gt_turned
+    lfs 1, 0x84(30)
+    lfs 0, 0x14(29)
+    fsubs 1, 1, 0
+    lfs 2, 0x80(30)
+    lfs 0, 0x10(29)
+    fsubs 2, 2, 0
+    bl gc_atan2
+    stfs 1, 0x98(30)
+gt_turned:
     li 9, 0
     stw 9, {S_PROMPT}(31)
     bl {CANCEL_MESSAGE}
@@ -1511,12 +1644,50 @@ gc_hud:
     mtlr 0
     lis 11, {STATE_HA}
     addi 11, 11, {STATE_LO}
-    lis 12, {GOLD_HI}
+    lis 12, {GOLD_HI}               # the gold: his light times GOLD_TINT (no moby: GOLD)
     ori 12, 12, {GOLD_LO}
+    lis 10, {HERO_HA}
+    addi 10, 10, {HERO_LO}
+    lwz 9, 0x2080(10)
+    cmpwi 9, 0
+    beq gh_lit
+    lwz 9, 0x38(9)
+    clrlwi 8, 9, 24                 # red
+    mulli 8, 8, {TINT_R}
+    srwi 8, 8, 8
+    cmplwi 8, 255
+    ble gh_red
+    li 8, 255
+gh_red:
+    mr 12, 8
+    rlwinm 8, 9, 24, 24, 31         # green
+    mulli 8, 8, {TINT_G}
+    srwi 8, 8, 8
+    cmplwi 8, 255
+    ble gh_green
+    li 8, 255
+gh_green:
+    slwi 8, 8, 8
+    or 12, 12, 8
+    rlwinm 8, 9, 16, 24, 31         # blue
+    mulli 8, 8, {TINT_B}
+    srwi 8, 8, 8
+    cmplwi 8, 255
+    ble gh_blue
+    li 8, 255
+gh_blue:
+    slwi 8, 8, 16
+    or 12, 12, 8
+gh_lit:
     lwz 9, {S_COLOUR}(11)
     cmpwi 9, 0
-    beq gh_colour
+    beq gh_parts
     mr 12, 9
+gh_parts:
+    lis 8, {GIANT_HA}               # his parts and the balls take it too (gc_show, gc_chain_place)
+    addi 8, 8, {GIANT_LO}
+    stw 12, {G_PART_COLOUR}(8)
+    stw 12, {G_BALL_COLOUR}(8)
 gh_colour:
     lis 9, {OWNED_HA}
     lhz 9, {OWNED_LO}(9)
@@ -1586,6 +1757,8 @@ gc_input:
     lwz 9, 0x2080(9)
     cmpw 9, 3
     bne gi_drop
+    lwz 0, {LIST_A}(3)              # (the live lists stay)
+    lwz 8, {LIST_B}(3)
     addi 10, 3, {ANIM_FIELDS} - 4
     addi 11, 29, {G_KEPT_FIELDS} - 4
     li 12, {ANIM_FIELDS_SIZE} / 4
@@ -1594,11 +1767,14 @@ gi_restore:
     lwzu 12, 4(11)
     stwu 12, 4(10)
     bdnz gi_restore
+    stw 0, {LIST_A}(3)
+    stw 8, {LIST_B}(3)
 gi_drop:
     li 9, 0
     stw 9, {G_KEPT}(29)
 gi_kept:
     bl gc_clank_back
+    bl gc_pack
     li 9, 0
     stw 9, {S_MOVES}(31)
     stw 9, {S_HELD}(31)
@@ -2153,6 +2329,7 @@ gq_legs:                            # his legs under Ratchet while the mode is o
     cmpwi 9, {FREE_C}
     beq gq_allowed
     bl gc_install
+    bl gc_sounds
     lwz 26, {S_MODEL}(31)
 gq_allowed:
     bl gc_shock
@@ -2204,6 +2381,7 @@ gq_legs_rate:
     bl gc_place
     bl gc_flames
 gq_punch:                           # Square, Circle, Triangle: a move, one at a time
+    bl gc_flame_sound
     bl gc_leg
     li 28, 0                        # the part's model, 0 = none
     cmpwi 26, 0
@@ -2295,8 +2473,16 @@ gq_action:
     lwz 9, {S_PUNCH}(31)
     cmpwi 9, 0
     beq gq_move_next
-    bl gc_move_record               # its action
+    bl gc_move_record               # its sound (MOVE_SOUNDS), then its action
     lwz 9, {S_PUNCH}(31)
+    lha 10, {M_SOUND} + 2(3)
+    cmpw 9, 10
+    bne gq_action_frame
+    lha 3, {M_SOUND}(3)
+    bl gc_giant_sound
+    bl gc_move_record
+    lwz 9, {S_PUNCH}(31)
+gq_action_frame:
     lwz 10, {M_ACTION}(3)
     cmpw 9, 10
     bne gq_move_next
@@ -2326,8 +2512,8 @@ gq_move_next:
     lwz 11, {S_HELD}(31)
     and. 10, 10, 11
     beq gq_move_count
-    lwz 9, {M_GROW}(3)
-    addi 9, 9, {ARM_DELAY}
+    lwz 9, {M_ACTION}(3)            # (counted up below: its action is the next frame)
+    addi 9, 9, -1
     li 10, -1                       # (its animation set again)
     stw 10, {S_FIST} + 8(31)
 gq_move_count:
@@ -3141,7 +3327,13 @@ gc_shock:                           # (r26 = his parts may show; r29/r30): the j
     cmpwi 9, {STATE_TYPE_JUMP}
     beq gw_jump
     cmpwi 9, {STATE_TYPE_HOVER}     # (a hover after the jump is no landing)
+    beq gw_jump
+    lwz 9, 0x2084(30)               # nor the fall when a hover ends (the user: "when i stop hover, he
+    cmpwi 9, {FALL_STATE}           # does his stomp in the air"): from a jump or a hover, till he is down
     bne gw_air
+    lwz 9, {G_SHOCK_AIR}(29)
+    cmpwi 9, 0
+    beq gw_air
 gw_jump:
     lwz 9, {HERO_LANDED}(30)        # down already (the jump state runs on ~11 frames after it)
     cmpwi 9, 0
@@ -3204,15 +3396,228 @@ gw_out:
     mtlr 0
     blr
 
-gc_flames:                          # (r27 = the legs' moby; r29/r30): the Pyrocitor's flame down from his feet while Ratchet hovers
+gc_atan2:                           # (f1 = y, f2 = x) -> f1 = atan2(y, x), within ~0.005 rad (f0, f3..f7, r9)
+    lis 9, {POOL_HA}
+    addi 9, 9, {POOL_LO}
+    fabs 3, 1
+    fabs 4, 2
+    fmr 5, 3                        # f5 = the smaller of |y|, |x|, f6 the larger
+    fmr 6, 4
+    fcmpu 0, 3, 4
+    ble ga_order
+    fmr 5, 4
+    fmr 6, 3
+ga_order:
+    lfs 0, {P_ZERO}(9)
+    fcmpu 0, 6, 0
+    beq ga_zero
+    fdivs 5, 5, 6                   # a, then a + a s (A s^2 + B s + C), s = a^2
+    fmuls 6, 5, 5
+    lfs 0, {P_ATAN_A}(9)
+    lfs 7, {P_ATAN_B}(9)
+    fmadds 0, 0, 6, 7
+    lfs 7, {P_ATAN_C}(9)
+    fmadds 0, 0, 6, 7
+    fmuls 0, 0, 6
+    fmadds 5, 0, 5, 5
+    fcmpu 0, 3, 4                   # past the diagonal: pi/2 less it
+    ble ga_x
+    lfs 0, {P_HALF_PI}(9)
+    fsubs 5, 0, 5
+ga_x:
+    lfs 0, {P_ZERO}(9)
+    fcmpu 0, 2, 0                   # x < 0: pi less it
+    bge ga_y
+    lfs 0, {P_PI}(9)
+    fsubs 5, 0, 5
+ga_y:
+    lfs 0, {P_ZERO}(9)
+    fcmpu 0, 1, 0                   # y < 0: below
+    bge ga_out
+    fneg 5, 5
+ga_out:
+    fmr 1, 5
+    blr
+ga_zero:
+    fmr 1, 0
+    blr
+
+gc_flame_sound:                     # (r27 = the legs' moby, 0 = none; r29/r30): the flames' sound while they burn
+    mflr 0
+    std 0, 0x10(1)
+    stdu 1, -0x80(1)
+    std 31, 0x70(1)
+    li 31, 0                        # r31 = 1: they burn
+    cmpwi 27, 0
+    beq gfs_have
+    lwz 9, {G_FLAMES}(29)
+    cmpwi 9, 0
+    beq gfs_have
+    lwz 9, {G_FLAME_SOUND}(29)
+    cmpwi 9, 0
+    beq gfs_have
+    lwz 9, 0x2084(30)
+{FLAME_SOUND_TESTS}
+    b gfs_have
+gfs_burn:
+    li 31, 1
+gfs_have:
+    lwz 3, {G_FLAME_SOUND} + 0x10(29)   # its voice, if it is still its (as 0xb40b0 checks the hover's)
+    cmpwi 3, 0
+    blt gfs_start
+    mulli 9, 3, 0x70
+    lis 10, {VOICES_HA}
+    addi 10, 10, {VOICES_LO}
+    add 10, 10, 9
+    lwz 11, 0x88(10)
+    lwz 12, 0x2080(30)
+    cmpw 11, 12
+    bne gfs_lost
+    lbz 11, 0x74(10)
+    cmpwi 11, 0
+    beq gfs_lost
+    cmpwi 31, 0
+    bne gfs_out                     # burning, and heard
+    bl {SOUND_STOP}
+gfs_lost:
+    li 9, -1
+    stw 9, {G_FLAME_SOUND} + 0x10(29)
+gfs_start:
+    cmpwi 31, 0
+    beq gfs_out
+    lwz 9, 0x2080(30)               # his model's definition of it, copied, at FLAME_SOUND's pitch
+    lwz 10, 0x24(9)
+    lbz 11, 0xd(10)
+    lwz 12, {G_FLAME_SOUND} + 4(29)
+    cmpw 12, 11
+    bge gfs_out
+    lwz 10, 0x28(10)
+    cmpwi 10, 0
+    beq gfs_out
+    slwi 12, 12, 5
+    add 10, 10, 12
+    addi 10, 10, -4
+    addi 11, 29, {G_FLAME_SOUND} + 0x20 - 4
+    li 12, 8
+    mtctr 12
+gfs_copy:
+    lwzu 12, 4(10)
+    stwu 12, 4(11)
+    bdnz gfs_copy
+    lwz 9, {G_FLAME_SOUND} + 8(29)
+    stw 9, {G_FLAME_SOUND} + 0x30(29)
+    stw 9, {G_FLAME_SOUND} + 0x34(29)
+    addi 3, 29, {G_FLAME_SOUND} + 0x20
+    li 4, 4                         # (looping)
+    lwz 5, 0x2080(30)
+    li 6, 0
+    lwz 7, {G_FLAME_SOUND} + 0xc(29)
+    bl {PLAY_SOUND_DEF}
+    stw 3, {G_FLAME_SOUND} + 0x10(29)
+    cmpwi 3, 0
+    blt gfs_out
+    mulli 9, 3, 0x70                # the voice follows him (PLAY_MODEL_SOUND 0x15d1c4)
+    lis 10, {VOICES_HA}
+    addi 10, 10, {VOICES_LO}
+    add 10, 10, 9
+    lwz 11, 0x2080(30)
+    stw 11, 0x88(10)
+    lwz 12, {G_FLAME_SOUND} + 4(29)
+    sth 12, 0x7e(10)
+gfs_out:
+    ld 31, 0x70(1)
+    addi 1, 1, 0x80
+    ld 0, 0x10(1)
+    mtlr 0
+    blr
+
+gc_sounds:                          # (r29/r31): once his model is in, his sounds' bank loaded and his definitions given out
+    lwz 9, {G_SOUNDS}(29)
+    cmpwi 9, 0
+    bnelr
+    lwz 9, {S_MODEL}(31)
+    cmpwi 9, 0
+    beqlr
+    lwz 9, {G_MISSILE_MODEL}(29)
+    cmpwi 9, 0
+    beqlr
+    mflr 0
+    std 0, 0x10(1)
+    stdu 1, -0x70(1)
+    lis 3, {GIANT_SOUNDS_HA}
+    addi 3, 3, {GIANT_SOUNDS_LO}
+    addi 3, 3, {SOUNDS_BANK_OFF}
+    bl {BANK_LOAD_FROM_MEM}
+    li 9, -1
+    cmpwi 3, 0
+    ble gsd_out
+    lis 4, {GIANT_SOUNDS_HA}        # r4 = his definitions, the missile's behind them
+    addi 4, 4, {GIANT_SOUNDS_LO}
+    li 5, {SOUND_DEFS}
+    mtctr 5
+    addi 5, 4, 0x1c
+gsd_bank:                           # each at the bank
+    stw 3, 0(5)
+    addi 5, 5, 0x20
+    bdnz gsd_bank
+    lwz 9, {G_MISSILE_MODEL}(29)
+    addi 5, 4, {GIANT_SOUND_COUNT} * 0x20
+    stw 5, 0x28(9)
+    li 5, {SOUND_DEFS} - {GIANT_SOUND_COUNT}
+    stb 5, 0xd(9)
+    lwz 9, {S_MODEL}(31)            # of his parts, SOUND_PARTS' headers
+    lis 5, {HEADERS_AT_HI}
+    ori 5, 5, {HEADERS_AT_LO}
+    add 9, 9, 5
+    li 5, {GIANT_SOUND_COUNT}
+{SOUND_PARTS_SET}
+    li 9, 1
+gsd_out:
+    stw 9, {G_SOUNDS}(29)
+    addi 1, 1, 0x70
+    ld 0, 0x10(1)
+    mtlr 0
+    blr
+
+gc_giant_sound:                     # (r3 = one of his definitions, < 0 none; r29/r30): it played at Ratchet
+    lwz 9, {G_SOUNDS}(29)
+    cmpwi 9, 1
+    bnelr
+    cmpwi 3, 0
+    bltlr
+    mflr 0
+    std 0, 0x10(1)
+    stdu 1, -0x70(1)
+    slwi 3, 3, 5
+    lis 9, {GIANT_SOUNDS_HA}
+    addi 9, 9, {GIANT_SOUNDS_LO}
+    add 3, 9, 3
+    li 4, 0
+    lwz 5, 0x2080(30)
+    li 6, 0
+    li 7, 0x400
+    bl {PLAY_SOUND_DEF}
+    cmpwi 3, 0
+    blt ggs_out
+    mulli 9, 3, 0x70                # the voice follows him (as PLAY_MODEL_SOUND)
+    lis 10, {VOICES_HA}
+    addi 10, 10, {VOICES_LO}
+    add 10, 10, 9
+    lwz 11, 0x2080(30)
+    stw 11, 0x88(10)
+ggs_out:
+    addi 1, 1, 0x70
+    ld 0, 0x10(1)
+    mtlr 0
+    blr
+
+gc_flames:                          # (r27 = the legs' moby; r29/r30): the Pyrocitor's flame down from his feet in FLAME_STATES
     lwz 9, {G_FLAMES}(29)
     cmpwi 9, 0
     beqlr
     lwz 9, 0x2084(30)
-    cmpwi 9, {HOVER_A}
-    beq gf_go
-    cmpwi 9, {HOVER_B}
-    bnelr
+{FLAME_TESTS}
+    blr
 gf_go:
     mflr 0
     std 0, 0x10(1)
@@ -3475,12 +3880,30 @@ gl_ring:
     lfs 2, {G_ZOOM_EASE}(29)
     fmadds 0, 1, 2, 0
     stfs 0, {CAMERA_DISTANCE}(9)
-    lwz 10, {STATE_TYPE}(30)        # in a jump, up with him
+    lwz 10, {STATE_TYPE}(30)        # in a jump, up with him, from where he left the ground
     cmpwi 10, {STATE_TYPE_JUMP}
-    bne gl_zoom
+    beq gl_cam_up
+    cmpwi 10, {STATE_TYPE_HOVER}
+    beq gl_zoom
     lfs 1, 0x88(30)
-    lfs 2, {HERO_GROUND}(30)
+    stfs 1, {G_CAM_BASE}(29)
+    b gl_zoom
+gl_cam_up:
+    lfs 1, 0x88(30)
+    lfs 2, {G_CAM_BASE}(29)
     fsubs 1, 1, 2
+    lis 10, {POOL_HA}
+    addi 10, 10, {POOL_LO}
+    lfs 2, {P_ZERO}(10)
+    fcmpu 0, 1, 2
+    bge gl_cam_low
+    fmr 1, 2
+gl_cam_low:
+    lfs 2, {G_CAM_JUMP} + 0xc(29)
+    fcmpu 0, 1, 2
+    ble gl_cam_high
+    fmr 1, 2
+gl_cam_high:
     lfs 2, {G_CAM_JUMP} + 4(29)
     lfs 3, {G_CAM_JUMP}(29)
     fmadds 1, 1, 2, 3               # the height wanted
@@ -4594,6 +5017,8 @@ gc_unhold:                          # (r8 = a still pose's record, r7 = the hero
     lwzx 9, 9, 7
     cmpw 9, 3
     bne gu_drop
+    lwz 0, {LIST_A}(3)              # (the live lists stay)
+    lwz 7, {LIST_B}(3)
     addi 10, 3, {ANIM_FIELDS} - 4
     addi 11, 8, {H_FIELDS} - 4
     li 12, {ANIM_FIELDS_SIZE} / 4
@@ -4602,6 +5027,8 @@ gu_restore:
     lwzu 12, 4(11)
     stwu 12, 4(10)
     bdnz gu_restore
+    stw 0, {LIST_A}(3)
+    stw 7, {LIST_B}(3)
 gu_drop:
     li 9, 0
     stw 9, {H_KEPT}(8)
@@ -5178,6 +5605,97 @@ gc_bomb_kind_b:
 gbk_b_back:
     b {BOMB_KIND_B_BACK}
 
+gc_pack:                            # (r31 = state block): the Heli-Pack while the mode is on (PACK_ITEM)
+    lis 10, {HERO_HA}
+    addi 10, 10, {HERO_LO}
+    lwz 11, {S_PACK_BACK}(31)
+    lwz 9, {S_MODE}(31)
+    cmpwi 9, 0
+    beq gp_back
+    cmpwi 11, 0                     # on: a Thruster-Pack changed for the Heli-Pack, once
+    bnelr
+    lwz 9, {PACK_ITEM}(10)
+    cmpwi 9, {THRUSTER_PACK}
+    bnelr
+    lis 12, {UNLOCKS_HA}
+    lbz 12, {UNLOCKS_LO} + {HELI_PACK}(12)
+    cmpwi 12, 0
+    beqlr
+    stw 9, {S_PACK_BACK}(31)
+    li 9, {HELI_PACK}
+    stw 9, {PACK_REQUEST}(10)
+    blr
+gp_back:                            # off: the pack he wore asked back, out of water
+    cmpwi 11, 0
+    beqlr
+    lwz 9, {STATE_TYPE}(10)
+    cmpwi 9, {STATE_TYPE_WATER}
+    beqlr
+    stw 11, {PACK_REQUEST}(10)
+    li 9, 0
+    stw 9, {S_PACK_BACK}(31)
+    blr
+
+gc_double_jump:                     # (r19 = hero, r3 free): in the mode a second X goes to the glide's test
+    lis 3, {STATE_HA}
+    lwz 3, {STATE_LO} + {S_MODE}(3)
+    cmpwi 3, 0
+    beq gdj_game
+    lbz 3, {HERO_KIND}(19)
+    cmpwi 3, 0
+    bne gdj_game
+    b {GLIDE_TEST}
+gdj_game:
+    lbz 3, 0x20a8(19)               # the displaced instruction
+    b {DOUBLE_JUMP_BACK}
+
+gc_no_flips:                        # (r3 = the state asked for, r27 = hero): in the mode a flip is his plain jump
+{FLIP_TESTS}
+    b gnf_game
+gnf_mode:
+    lis 5, {STATE_HA}
+    lwz 5, {STATE_LO} + {S_MODE}(5)
+    cmpwi 5, 0
+    beq gnf_game
+    lbz 5, {HERO_KIND}(27)
+    cmpwi 5, 0
+    bne gnf_game
+    li 3, {PLAIN_JUMP}
+gnf_game:
+    cmpwi 1, 3, 0x64                # the displaced instruction
+    b {NO_FLIPS_BACK}
+
+gc_jump_sounds:                     # (r27 = hero, r31 = his moby; r3, r4 free): in the mode no animation sounds in PACK_JUMPS
+    lis 3, {STATE_HA}
+    lwz 3, {STATE_LO} + {S_MODE}(3)
+    cmpwi 3, 0
+    beq gjs_game
+    lbz 3, {HERO_KIND}(27)
+    cmpwi 3, 0
+    bne gjs_game
+    lwz 3, 0x2084(27)
+{PACK_JUMP_TESTS}
+gjs_game:
+    cmpwi 30, 0                     # the displaced instruction
+    b {JUMP_SOUNDS_BACK}
+gjs_quiet:
+    li 3, 0xff                      # no looping sound (one going stops: 0x8c150)
+    stb 3, 0x7c(31)
+    b {JUMP_SOUNDS_SKIP}
+
+gc_hover_sound:                     # (r25 = hero, r3 free): in the mode the pack's whirr is not started
+    lis 3, {STATE_HA}
+    lwz 3, {STATE_LO} + {S_MODE}(3)
+    cmpwi 3, 0
+    beq ghs_game
+    lbz 3, {HERO_KIND}(25)
+    cmpwi 3, 0
+    bne ghs_game
+    b {HOVER_SOUND_SKIP}
+ghs_game:
+    li 3, 3                         # the displaced instruction
+    b {HOVER_SOUND_BACK}
+
 gc_jump:
     lfs 3, 0x430(29)                # the displaced instruction: the jump's height (r29 = hero)
     lis 11, {STATE_HA}
@@ -5207,7 +5725,7 @@ gc_velocity:
     bne gv_back
     lwz 12, 0x2084(31)
     cmpwi 12, {WALK_STATE}
-    bne gv_back
+    bne gv_air
     lwz 12, {S_PUNCH}(11)           # a punch or the bomb going: he stands (HOLD_MOVES)
     cmpwi 12, 0
     beq gv_run
@@ -5225,6 +5743,18 @@ gv_run:
     lis 11, {GIANT_HA}
     addi 11, 11, {GIANT_LO}
     lfs 0, {G_RUN}(11)
+    fmuls 31, 31, 0
+    b gv_back
+gv_air:                             # in a jump or a hover: AIR
+    lwz 12, {STATE_TYPE}(31)
+    cmpwi 12, {STATE_TYPE_JUMP}
+    beq gv_air_on
+    cmpwi 12, {STATE_TYPE_HOVER}
+    bne gv_back
+gv_air_on:
+    lis 11, {GIANT_HA}
+    addi 11, 11, {GIANT_LO}
+    lfs 0, {G_AIR}(11)
     fmuls 31, 31, 0
 gv_back:
     b {VELOCITY_BACK}
@@ -5330,6 +5860,11 @@ gp_out:
 """
 
 
+def tests(register, values, label):
+    """Assembly: to label when the register is one of the values (falls through otherwise)."""
+    return "\n".join(f"    cmpwi {register}, {value}\n    beq {label}" for value in values)
+
+
 def hooks(args):
     return [Hook(PEDESTAL_HOOK, "pedestal", PEDESTAL_HOOK_WORD, jump=True),
             *(Hook(site, "gc_frame", HERO_MAIN, chain=True) for site in FRAME_HOOKS),
@@ -5342,6 +5877,10 @@ def hooks(args):
             *(Hook(site, f"gc_bomb_colour_{i}", function) for i, (site, function, _, _) in enumerate(BOMB_COLOUR_HOOKS)),
             Hook(BOMB_CHANNELS_HOOK, "gc_bomb_channels", BOMB_CHANNELS),
             Hook(JUMP_HOOK, "gc_jump", JUMP_HOOK_WORD, jump=True),
+            Hook(DOUBLE_JUMP_HOOK, "gc_double_jump", DOUBLE_JUMP_WORD, jump=True),
+            Hook(HOVER_SOUND_HOOK, "gc_hover_sound", HOVER_SOUND_WORD, jump=True),
+            Hook(NO_FLIPS_HOOK, "gc_no_flips", NO_FLIPS_WORD, jump=True),
+            Hook(JUMP_SOUNDS_HOOK, "gc_jump_sounds", JUMP_SOUNDS_WORD, jump=True),
             Hook(EQUIP_HOOK, "gc_equip", EQUIP_UPDATE)]
 
 
@@ -5384,15 +5923,17 @@ def data(args):
         assert len(block) == G_MANIP and (vaddr + G_MANIP) % 0x10 == 0
         block += bytes(0x40)
         assert len(block) == G_MOVES
-        for part, anim, sided, frames, action, idle, grow, bones, scale, spot, anchor, turn, rate, repeat, blend, shrink, pin, balls in MOVE_TABLE:
-            block += struct.pack(">7i2if3f3f2f3iii4x", part, anim, sided, frames, action, idle, grow, *bones, scale, *spot, *anchor,
-                                 turn, rate, repeat, blend, shrink, pin, balls)
+        assert len(MOVE_SOUNDS) == len(MOVE_TABLE)
+        for (part, anim, sided, frames, action, idle, grow, bones, scale, spot, anchor, turn, rate, repeat, blend, shrink, pin,
+             balls), sound in zip(MOVE_TABLE, MOVE_SOUNDS):
+            block += struct.pack(">7i2if3f3f2f3iii2h", part, anim, sided, frames, action, idle, grow, *bones, scale, *spot, *anchor,
+                                 turn, rate, repeat, blend, shrink, pin, balls, *sound)
         assert len(block) == G_MOVES + len(MOVE_TABLE) * MOVE_SIZE == G_BOMB_COOLDOWN
         block += struct.pack(">i12x", BOMB_COOLDOWN)
         assert len(block) == G_EYE_ENTRY
         block += bytes(G_JUMP - G_EYE_ENTRY)
         assert len(block) == G_JUMP
-        block += struct.pack(">fi3f", JUMP, JUMP_ANIM, *CAM_JUMP)
+        block += struct.pack(">fi4ff", JUMP, JUMP_ANIM, *CAM_JUMP, 0.0)
         block += bytes(G_LEG - len(block))
         block += struct.pack(">ii3f", CLANK_LEG[0], CLANK_LEG[1], *CLANK_LEG[2])
         assert len(block) == G_LEG_MOBY
@@ -5500,6 +6041,10 @@ def data(args):
         block += puffs(*SCENE_STREAM) + puffs(*SCENE_BOND)
         sparks = SCENE_BOND_SPARKS
         block += struct.pack(">3f3ff2I2iIf4x", *sparks[0], *sparks[1], sparks[2], *sparks[3], *sparks[4], *sparks[5:])
+        assert len(block) == G_FLAME_SOUND
+        block += struct.pack(">4i4i32x", *FLAME_SOUND, -1, 0, 0, 0)
+        assert len(block) == G_SOUNDS and G_AIR == G_SOUNDS + 4
+        block += struct.pack(">if8x", 0, AIR)
         punch = MOVE_TABLE[0]
         assert punch[3] == sum(PUNCH_POSE[1:3]) + sum(PUNCH_POSE[4:]) and punch[4] == PUNCH_POSE[1] + PUNCH_POSE[2]
         assert LUNGE[:2] == (PUNCH_POSE[1] + 1, punch[4])
@@ -5524,7 +6069,8 @@ def data(args):
             ("rw2", "missile_pixels", lambda vaddr: [missile_pixels]),
             ("rw2", "shock_model", lambda vaddr: [shock]), ("rw2", "shock_textures", lambda vaddr: [shock_textures]),
             ("rw2", "shock_pixels", lambda vaddr: [shock_pixels]),
-            ("rw2", "eye_texture", lambda vaddr: [eye_texture()])]
+            ("rw2", "eye_texture", lambda vaddr: [eye_texture()]),
+            ("rw2", "giant_sounds", lambda vaddr: [sound_data()])]
 
 
 @functools.cache
@@ -5541,6 +6087,21 @@ def part_data():
     tubes = {PART_STRUT_L: 0, PART_STRUT_R: 1, PART_COLUMN: 2}
     return tuple(Extract("giant_tube_indices", tube_args(), tubes[k]) if k in tubes
                  else Extract("giant_part", [list(r) for r in ranges]) for k, ranges in enumerate(PARTS)) + (Extract("giant_ball_indices", *BALL),)
+
+
+@functools.cache
+def sound_data():
+    """His sound definitions and the missile's, then from SOUNDS_BANK_OFF their bank (rc2data.giant_sounds)."""
+    data = Extract("giant_sounds", [GIANT_MODEL_CLASS, MISSILE_CLASS])
+    assert struct.unpack_from(">I", data.data, SOUNDS_BANK_OFF)[0] == 3       # the bank's first word
+    return data
+
+
+def sound_parts():
+    """Assembly for gc_sounds (r9 = the first part's header, r4 his definitions, r5 their count): SOUND_PARTS get them."""
+    header = main_heap_layout()["HEADER"]
+    return "\n".join(f"    lis 6, {k * header >> 16}\n    ori 6, 6, {k * header & 0xFFFF}\n    add 6, 9, 6\n"
+                     f"    stw 4, 0x28(6)\n    stb 5, 0xd(6)" for k in SOUND_PARTS)
 
 
 @functools.cache
@@ -5613,7 +6174,8 @@ def reserve(size):
 def pool(args):
     return dict(SCALE=DISPLAY_SCALE, LIFT=DISPLAY_LIFT, SPIN=SPIN, PI=3.141592653589793, TWO_PI=6.283185307179586,
                 RANGE2=RANGE * RANGE, SHAKE=SHAKE[1], POSE_BLEND=POSE[4], POSE_SPEED=1.0, POSE_EASE=0.1,
-                ZERO=0.0, ONE=1.0, HALF=0.5, ARM_LEAST=ARM_LEAST, TWO=2.0, THREE=3.0, MELEE_PUSH=MELEE_PUSH, MELEE_UP=MELEE_UP, ARC=SCENE_ARC)
+                ZERO=0.0, ONE=1.0, HALF=0.5, ARM_LEAST=ARM_LEAST, TWO=2.0, THREE=3.0, MELEE_PUSH=MELEE_PUSH, MELEE_UP=MELEE_UP, ARC=SCENE_ARC,
+                HALF_PI=1.5707963267948966, ATAN_A=-0.0464964749, ATAN_B=0.15931422, ATAN_C=-0.327622764)
 
 
 def parts(args):
@@ -5658,14 +6220,19 @@ def fields(args, addr):
     eye_pixels_at = end + -end % 0x80
     eye_size = len(eye_texture()) - 0x80
     giant.update(PIXELS_RESERVE_HI=reserve(eye_pixels_at + eye_size),
-                 **pair("EYE_TEXTURE", addr["eye_texture"]),
+                 **pair("EYE_TEXTURE", addr["eye_texture"]), **pair("GIANT_SOUNDS", addr["giant_sounds"]),
+                 SOUND_PARTS_SET=sound_parts(),
                  EYE_PIXELS_AT_HI=eye_pixels_at >> 16, EYE_PIXELS_AT_LO=eye_pixels_at & 0xFFFF,
                  EYE_PIXELS_SIZE_HI=eye_size >> 16, EYE_PIXELS_SIZE_LO=eye_size & 0xFFFF,
                  MISSILE_JOINTS_FIRST=MISSILE_JOINTS[0], MISSILE_JOINTS_LAST=MISSILE_JOINTS[-1],
-                 HOVER_A=HOVER_STATES[0], HOVER_B=HOVER_STATES[1])
+                 HOVER_A=HOVER_STATES[0], HOVER_B=HOVER_STATES[1],
+                 FLIP_TESTS=tests(3, FLIP_STATES, "gnf_mode"), FLAME_TESTS=tests(9, FLAME_STATES, "gf_go"),
+                 PACK_JUMP_TESTS=tests(3, PACK_JUMPS, "gjs_quiet"), FLAME_SOUND_TESTS=tests(9, FLAME_STATES, "gfs_burn"),
+                 LIST_A=LIST_HEADS[0], LIST_B=LIST_HEADS[1])
     assert MISSILE_JOINTS == tuple(range(MISSILE_JOINTS[0], MISSILE_JOINTS[-1] + 1))
     skip = 31 - (SKIP_UPDATE.bit_length() - 1)   # rlwinm keeps bits mb..me (big-endian numbering): all but SKIP_UPDATE
     giant.update(NOT_SKIP_MB=(skip + 1) % 32, NOT_SKIP_ME=(skip - 1) % 32)
+    giant.update(TINT_R=GOLD_TINT[0], TINT_G=GOLD_TINT[1], TINT_B=GOLD_TINT[2])
     giant.update(MELEE_FLAGS_HI=MELEE_FLAGS >> 16, CIRCLE_BUTTON=MOVE_BUTTONS[1],
                  ARMS_LEFT=ARMS_SHOULDERS[0], ARMS_RIGHT=ARMS_SHOULDERS[1])
     assert model.data[8] == BONES
