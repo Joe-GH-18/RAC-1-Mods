@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ingame.py [--restart] [--no-mode] [--log FILE]: into the game without anyone at the pad.
+"""ingame.py [--restart] [--p2] [--no-mode] [--log FILE]: into the game without anyone at the pad.
 
 --restart closes RPCS3 and starts it again under tools/trace.py (unsaved progress is lost).
 Then, from the title: Start, Load Game, the newest save, Yes; it waits for the level and, if
@@ -8,6 +8,8 @@ small grey thumbnails of the window against build/ingame/{title,menu,saves,confi
 of this machine's game, made once by hand); the buttons go into the controller's evdev node, so
 RPCS3 takes them for the pad's. With the controller away (it sleeps) --restart starts
 tools/vpad.py first, a virtual pad of its name that RPCS3 binds at boot, and the presses go to it.
+With --p2 it also starts the second player's virtual pad (tools/vpad.py --p2, "Backport P2") before
+RPCS3, for the co-op mod; RPCS3's Player 2 must be bound to it (tools/coop.py drives it).
 Prints one line per step and exits 0 once in the level.
 """
 import argparse
@@ -120,7 +122,7 @@ def peek(address, size=4):
         return None
 
 
-def restart(log):
+def restart(log, p2=False):
     for pid in subprocess.run(["pgrep", "-x", "AppRun.wrapped"], capture_output=True, text=True).stdout.split():
         os.kill(int(pid), signal.SIGTERM)
     for _ in range(80):
@@ -130,7 +132,12 @@ def restart(log):
     else:
         sys.exit("RPCS3 did not close")
     say("RPCS3 closed, starting it under tools/trace.py")
-    subprocess.run(["pkill", "-f", r"vpad\.py$"])   # an old virtual pad (it would go with that RPCS3 anyway)
+    subprocess.run(["pkill", "-f", r"vpad\.py( --p2)?$"])   # old virtual pads (they would go with that RPCS3 anyway)
+    if p2:
+        say("tools/vpad.py --p2: Player 2's pad")
+        subprocess.Popen([sys.executable, os.path.join(ROOT, "tools", "vpad.py"), "--p2"], cwd=ROOT,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        time.sleep(1)
     if not os.path.exists(PAD):              # RPCS3 binds a pad only at boot: the virtual one must be there
         say("no controller: tools/vpad.py stands in for it")
         subprocess.Popen([sys.executable, os.path.join(ROOT, "tools", "vpad.py")], cwd=ROOT,
@@ -194,11 +201,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--restart", action="store_true")
     parser.add_argument("--no-mode", action="store_true")
+    parser.add_argument("--p2", action="store_true", help="with --restart: start Player 2's virtual pad too")
     parser.add_argument("--log", default=os.path.join(ROOT, "build", "trace.log"))
     parser.add_argument("--timeout", type=float, default=180)
     args = parser.parse_args()
     if args.restart:
-        restart(args.log)
+        restart(args.log, args.p2)
     elif not window():
         sys.exit("no game window (use --restart)")
     if not in_level():

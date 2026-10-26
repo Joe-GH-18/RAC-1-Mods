@@ -185,8 +185,13 @@ SEG_END = 0x700000
 #   +0x190 the frame in which a drone of the Drone Device was last seen,
 #   +0x1a0..+0x2a0 the enemies the Taunter lured (LURES in mods/weaponlevels/taunter.py)
 # Golden Clank: +0x2a0..+0x340 (see mods/goldenclank.py)
+# Co-op Clank, also read by Golden Clank (all 0 without the co-op mod):
+#   +0x340 COOP_OUT: Clank is off Ratchet's back, +0x344 COOP_P2: Player 2 is in,
+#   +0x348 COOP_PILOT: Player 2 drives Giant Clank's arms, +0x34c COOP_PAD: Player 2's pad block
+#   (laid out as PAD; 0 = none), +0x350..+0x380 spare
 STATE = 0x1606320
-STATE_END = 0x1606660
+COOP_OUT, COOP_P2, COOP_PILOT, COOP_PAD = 0x340, 0x344, 0x348, 0x34C
+STATE_END = 0x16066A0
 
 # Data: what a mod embeds is loaded through the ELF's three unused PT_LOAD entries (program
 # header index, address). Each takes the data of all mods one after the other, 16-byte aligned:
