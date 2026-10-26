@@ -1855,9 +1855,18 @@ gi_moves:
     cmpwi 9, 0
     beq gi_out
     lwz 11, 0xa0(30)
+    lwz 9, {COOP_PILOT}(31)         # two pilots (mods/coop): Player 2's buttons fire the arms
+    cmpwi 9, 0
+    beq gi_held
+    lwz 11, {COOP_HELD}(31)
+gi_held:
     andi. 12, 11, {MOVES}
     stw 12, {S_HELD}(31)
     lwz 11, 0xa4(30)
+    cmpwi 9, 0
+    beq gi_pressed
+    lwz 11, {COOP_PRESSED}(31)
+gi_pressed:
     andi. 12, 11, {MOVES}
     stw 12, {S_MOVES}(31)
     li 0, {MOVES}
@@ -1909,6 +1918,8 @@ gi_free:                            # on a gun and the like: what waits goes to 
     li 9, 0
     stw 9, {S_CHORD}(31)
 gi_out:
+    lwz 9, {S_MODE}(31)             # for mods/coop (GC_MODE)
+    stw 9, {GC_MODE}(31)
     ld 29, 0x80(1)
     ld 30, 0x78(1)
     ld 31, 0x70(1)

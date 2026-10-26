@@ -188,9 +188,13 @@ SEG_END = 0x700000
 # Co-op Clank, also read by Golden Clank (all 0 without the co-op mod):
 #   +0x340 COOP_OUT: Clank is off Ratchet's back, +0x344 COOP_P2: Player 2 is in,
 #   +0x348 COOP_PILOT: Player 2 drives Giant Clank's arms, +0x34c COOP_PAD: Player 2's pad block
-#   (laid out as PAD; 0 = none), +0x350..+0x380 spare
+#   (laid out as PAD; 0 = none), +0x350 COOP_HELD and +0x354 COOP_PRESSED: Player 2's buttons
+#   (PAD's bits) held and pressed this frame
+# Golden Clank, read by Co-op Clank (0 without Golden Clank): +0x358 GC_MODE: its mode is on
+#   (written each frame); +0x35c..+0x380 spare
 STATE = 0x1606320
 COOP_OUT, COOP_P2, COOP_PILOT, COOP_PAD = 0x340, 0x344, 0x348, 0x34C
+COOP_HELD, COOP_PRESSED, GC_MODE = 0x350, 0x354, 0x358
 STATE_END = 0x16066A0
 
 # Data: what a mod embeds is loaded through the ELF's three unused PT_LOAD entries (program
