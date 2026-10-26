@@ -14,6 +14,7 @@ Prints one line per step and exits 0 once in the level.
 """
 import argparse
 import os
+import shutil
 import signal
 import struct
 import subprocess
@@ -122,6 +123,34 @@ def peek(address, size=4):
         return None
 
 
+BLIND_PRESSES = 3
+SAVES = os.path.expanduser("~/.config/rpcs3/dev_hdd0/home/00000001/savedata")
+SAVE_BACKUPS = os.path.join(ROOT, "build", "saves")
+
+
+def saves_state():
+    """{file: (size, mtime)} of the game's saves."""
+    state = {}
+    for folder in sorted(os.listdir(SAVES)):
+        if folder.startswith("NPEA00385"):
+            for name in os.listdir(os.path.join(SAVES, folder)):
+                path = os.path.join(SAVES, folder, name)
+                state[path] = (os.path.getsize(path), os.path.getmtime(path))
+    return state
+
+
+def back_up_saves():
+    """A copy of the game's saves in build/saves/<time> (the last 20 kept)."""
+    os.makedirs(SAVE_BACKUPS, exist_ok=True)
+    target = os.path.join(SAVE_BACKUPS, time.strftime("%Y-%m-%d_%H%M%S"))
+    for folder in os.listdir(SAVES):
+        if folder.startswith("NPEA00385"):
+            shutil.copytree(os.path.join(SAVES, folder), os.path.join(target, folder))
+    for old in sorted(os.listdir(SAVE_BACKUPS))[:-20]:
+        shutil.rmtree(os.path.join(SAVE_BACKUPS, old))
+    say(f"saves backed up to {target}")
+
+
 def restart(log, p2=False):
     for pid in subprocess.run(["pgrep", "-x", "AppRun.wrapped"], capture_output=True, text=True).stdout.split():
         os.kill(int(pid), signal.SIGTERM)
@@ -168,16 +197,34 @@ def in_level():
 
 
 def load(timeout):
-    """Title -> menu -> saves -> confirm -> the level."""
-    done, unknown_since, start = set(), time.time(), time.time()
+    """Title -> menu -> saves -> confirm -> the level.
+
+    Presses on unknown screens only while no game is loaded (no hero moby) and at most
+    BLIND_PRESSES of them: on 2026-10-26 Start and Cross pressed every few seconds on screens it
+    did not know reached the pause menu of a loaded (paused, so frames stood still) game and
+    saved it over three slots."""
+    done, unknown_since, start, blind = set(), time.time(), time.time(), 0
     while time.time() - start < timeout:
         name = screen()
         if name is None:
-            if "confirm" in done and in_level():
+            if in_level():                      # (also when the last press was made by hand)
                 return True
-            if not done and time.time() - unknown_since > 15:     # the attract demo: Start goes back to the title
+            if peek(HERO_MOBY):                 # a game is loaded (paused, or a scene): hands off
+                say("a game is loaded but frames stand still (paused?): no presses")
+                time.sleep(2)
+                continue
+            if blind < BLIND_PRESSES and not done and time.time() - unknown_since > 15:   # the attract demo: Start goes back to the title
                 say("no known screen for 15 s: Start")
                 press("start")
+                blind += 1
+                unknown_since = time.time()
+            elif blind < BLIND_PRESSES and "menu" in done and time.time() - unknown_since > 6:
+                # the saves or the confirm screen not matched (their thumbnails change with the
+                # saves): both take Cross; no game is loaded yet, so nothing can be saved
+                say("no known screen for 6 s after the menu: Cross")
+                press("cross")
+                blind += 1
+                done.add("confirm")
                 unknown_since = time.time()
             time.sleep(1)
             continue
@@ -205,9 +252,20 @@ def main():
     parser.add_argument("--log", default=os.path.join(ROOT, "build", "trace.log"))
     parser.add_argument("--timeout", type=float, default=180)
     args = parser.parse_args()
+    before = saves_state()
     if args.restart:
+        back_up_saves()
         restart(args.log, args.p2)
-    elif not window():
+    try:
+        run(args)
+    finally:
+        changed = [path for path, stat in saves_state().items() if before.get(path) != stat]
+        if changed:
+            say("WARNING: saves changed while this ran: " + ", ".join(sorted({os.path.basename(os.path.dirname(p)) for p in changed})))
+
+
+def run(args):
+    if not args.restart and not window():
         sys.exit("no game window (use --restart)")
     if not in_level():
         if not load(args.timeout):
