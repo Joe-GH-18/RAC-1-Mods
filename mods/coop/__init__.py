@@ -13,10 +13,10 @@ import struct
 from ..game import *  # noqa: F401,F403
 from ..rc2 import Extract
 from .. import sweep
-from . import body, combat, flight, fx, hud, layout, pad
+from . import body, combat, flight, fx, hud, layout, mini, pad
 
 # The parts' game addresses and numbers, as the module's own (build.py lets branches go to those).
-globals().update({name: value for part in (pad, body, flight, combat, fx, hud) for name, value in vars(part).items()
+globals().update({name: value for part in (pad, body, flight, combat, fx, hud, mini) for name, value in vars(part).items()
                   if name.isupper() and isinstance(value, int)})
 
 NAME = "coop"
@@ -47,7 +47,8 @@ def data(args):
     model, textures, pixels = model_data()
     return [("rw", "coop", lambda vaddr: [layout.TAG + layout.block()]),
             ("rw2", "clank_model", lambda vaddr: [model]), ("rw2", "clank_textures", lambda vaddr: [textures]),
-            ("rw2", "clank_pixels", lambda vaddr: [pixels])]
+            ("rw2", "clank_pixels", lambda vaddr: [pixels]),
+            ("rw2", "rider_anim", lambda vaddr: [Extract("level_animation", mini.RIDER_ANIM_LEVEL, mini.RIDER_ANIM_SLOT, vaddr)])]
 
 
 def pool(args):
@@ -55,7 +56,7 @@ def pool(args):
 
 
 def parts(args):
-    return [pad.CODE, flight.CODE, body.CODE, combat.CODE, fx.CODE, hud.CODE]
+    return [pad.CODE, flight.CODE, body.CODE, combat.CODE, fx.CODE, mini.CODE, hud.CODE]
 
 
 def fields(args, addr):
@@ -63,11 +64,11 @@ def fields(args, addr):
     entries = (len(textures) - 8) // 0x24
     assert len(model) % 0x10 == 0
     skip = 31 - (body.SKIP_UPDATE.bit_length() - 1)
-    constants = {name: value for module in (pad, body, flight, combat, fx, hud) for name, value in vars(module).items()
+    constants = {name: value for module in (pad, body, flight, combat, fx, hud, mini) for name, value in vars(module).items()
                  if name.isupper() and isinstance(value, int)}
     return dict(**constants, **layout.fields(), **pair("COOP", addr["coop"] + len(layout.TAG)),
                 **pair("CLANK_MODEL", addr["clank_model"]), **pair("CLANK_TEXTURES", addr["clank_textures"]),
-                **pair("CLANK_PIXELS", addr["clank_pixels"]),
+                **pair("CLANK_PIXELS", addr["clank_pixels"]), **pair("RIDER_ANIM", addr["rider_anim"]),
                 **{f"{name}_HA": ha(value) for name, value in constants.items()},
                 **{f"{name}_LO": lo(value) for name, value in constants.items()},
                 MODEL_SIZE_HI=len(model) >> 16, MODEL_SIZE_LO=len(model) & 0xFFFF,

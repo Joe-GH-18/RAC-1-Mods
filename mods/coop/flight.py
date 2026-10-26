@@ -82,6 +82,9 @@ ct_input:
     stw 9, {C_BOLT_SEED}(29)
     stw 9, {C_SEED}(29)
     bl coop_input
+    bl coop_mini_check              # the mini Giant Clank (mini.py) has the frame
+    cmpwi 3, 0
+    bne ct_shared
     bl coop_suspended
     cmpwi 3, 0
     beq ct_modes
@@ -127,16 +130,6 @@ ct_body:
     beq ct_shared
     bl coop_body_place
 ct_shared:
-    lwz 9, {GC_MODE}(31)            # two pilots: Golden Clank's mode on, Player 2 in
-    lwz 10, {C_DRIVER}(29)
-    cmpwi 10, {DRIVER_P2}
-    li 11, 0
-    bne ct_pilot
-    cmpwi 9, 0
-    beq ct_pilot
-    li 11, 1
-ct_pilot:
-    stw 11, {COOP_PILOT}(31)
     bl coop_combo_scan
     bl coop_combo_watch
     bl coop_ratchet_tick

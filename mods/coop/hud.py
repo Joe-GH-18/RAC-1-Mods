@@ -7,8 +7,8 @@ HUD_HOOK is in its update (0xd56d8 calls the widgets' updates, their +0x14; the 
 where whatever was drawn never showed (a 600 x 400 magenta rectangle, 2026-10-26).
 While Player 2 is in, a badge top left (T_HUD_X/Y): "P2 CLANK" in Clank's blue and his
 energy under it as a bar (T_BAR_*: its back, the energy in blue, gold when full, red-orange below
-the ram's cost); "P2 DOCKED" in grey on Ratchet's back, "P2 GIANT ARMS" in gold while Player 2
-fires Giant Clank's arms (COOP_PILOT). And the messages (coop_msg: C_MSG, the texts MESSAGES in
+the ram's cost); "P2 DOCKED" in grey on Ratchet's back, "P2 GIANT CLANK" in gold while Player 2
+walks the mini Giant Clank (mini.py). And the messages (coop_msg: C_MSG, the texts MESSAGES in
 layout.py), centred at T_MSG_X/Y for T_MSG_FRAMES, fading over the last T_MSG_FADE: Player 2
 joined, Clank docked, and each combo's name. Not drawn in the game's scenes (SCENE_FLAG).
 
@@ -48,6 +48,12 @@ chd_hide:
     lwz 3, {C_MODE}(29)
     cmpwi 3, {MODE_DOCKED}
     beq chd_out
+    cmpwi 3, {MODE_MINI}
+    bne chd_clank
+    bl coop_mini_light
+    bl coop_ride_draw
+    b chd_out
+chd_clank:
     bl coop_place
     bl coop_bolt_show
 chd_out:
@@ -179,10 +185,10 @@ coop_draw_hud:                      # (r29/r30) the badge and the message
     bne cdh_message
     li 28, {BADGE_DOCKED}           # the badge: its text and colour
     lwz 27, {T_HUD_GREY}(29)
-    lwz 9, {COOP_PILOT}(31)
-    cmpwi 9, 0
-    beq cdh_out_q
-    li 28, {BADGE_PILOT}
+    lwz 9, {C_MODE}(29)
+    cmpwi 9, {MODE_MINI}
+    bne cdh_out_q
+    li 28, {BADGE_MINI}
     lwz 27, {T_HUD_GOLD}(29)
     b cdh_badge
 cdh_out_q:

@@ -713,7 +713,11 @@ chi_way:
     stfs 0, {C_DIR} + 8(29)
     stfs 0, {C_DIR} + 12(29)
     mr 3, 28
-    lwz 4, {C_BODY}(29)
+    lwz 4, {C_BODY}(29)             # the source: his body, or the mini Giant Clank's
+    cmpwi 4, 0
+    bne chi_source
+    lwz 4, {C_MINI}(29)
+chi_source:
     mr 5, 27
     fmr 1, 31
     addi 7, 28, 0x10

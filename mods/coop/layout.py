@@ -40,7 +40,7 @@ C_STICK = 0xCC                 # the stick or the AI's (2 floats, y up)
 C_BUTTONS, C_BUTTONS_NEW = 0xD4, 0xD8   # held / pressed: Player 2's or the AI's
 C_SEAT = 0xDC                  # backpack Clank's place (3 floats)
 C_TMP = 0xE8                   # scratch (0x18 bytes)
-C_RIDE = 0x100                 # frames Ratchet stood still (the AI's idle)
+C_STILL = 0x100                # frames Ratchet stood still (the AI's idle)
 C_COMBO_FLASH = 0x104          # frames of the COMBO text left
 C_OVER_TARGETS = 0x108         # a chain reaction's targets: count, then up to 8 mobys
 C_LINKS = 0x10C
@@ -76,25 +76,49 @@ C_LINK = 0x344                 # frames the zap has held Ratchet (the tether)
 C_RCHARGE = 0x348              # frames Ratchet stays charged
 C_AIR = 0x34C                  # frames Ratchet has been in the air (charged)
 C_RATCHET_AT = 0x350           # where the tether reaches him (vec4)
+# The mini Giant Clank (mini.py):
+C_MINI = 0x360                 # his moby (0 = none)
+C_MINI_POS = 0x370             # his place (vec4)
+C_MINI_VEL = 0x380             # his velocity (vec4, units/s)
+C_MINI_YAW = 0x390             # his heading
+C_MINI_AIR = 0x394             # frames in the air (0 on the ground)
+C_MINI_MOVE = 0x398            # his move: 0 none, 1 the punch, 2 the missiles, 3 the bomb
+C_MINI_T = 0x39C               # frames into it
+C_MINI_BOMB_WAIT = 0x3A0       # frames before the next bomb
+C_MINI_HOVER = 0x3A4           # frames of hover left in this jump
+C_MINI_ANIM = 0x3A8            # his animation (-1 none set)
+C_MINI_PUNCHES = 0x3AC         # punches so far (left and right fist by turns)
+C_MINI_HIT = 0x3B0             # the punch has hit
+C_RAY_FROM = 0x3C0             # a ray's ends (vec4 each)
+C_RAY_TO = 0x3D0
+C_MINI_WISH = 0x3E0            # the stick's way (2 floats)
+C_RIDE = 0x3E8                 # Ratchet rides on his back
+C_RIDE_WAIT = 0x3EC            # frames before Ratchet can get on again
+C_RATCHET_Z = 0x3F0            # Ratchet's height a frame ago
+C_DISMOUNT = 0x3F4             # where Ratchet jumps off from: behind the mini (2 floats)
+C_RIDE_N = 0x400               # mobys in C_RIDE_KEPT
+C_RIDE_KEPT = 0x404            # each of Ratchet's mobys hidden this frame: the moby, its draw distance (+0x32), its model (+0x24)
+RIDE_KEPT_MAX = 20             # (he has 18: his own, two in each of 7 entries, 3 single)
+C_RIDER = 0x4F4                # the rider on his back: Ratchet's model in Quartu's pose (0 = none)
 C_TEST_HELD = 0x2E8            # the test input's buttons (PAD's bits), added to the pad's
 C_TEST_STICK = 0x2EC           # its stick (2 floats, y up), in place of the pad's
 C_BOLT_N = 0x2F4               # bolts in BOLTS this frame (the draw callback draws them)
 C_DESC = 0x2F8                 # the draw callback's function descriptor (code, TOC; 0 = not made yet)
-RUNTIME_SIZE = 0x380
+RUNTIME_SIZE = 0x500
 
-MODE_DOCKED, MODE_POP, MODE_FLY, MODE_DOCKING = 0, 1, 2, 3
+MODE_DOCKED, MODE_POP, MODE_FLY, MODE_DOCKING, MODE_MINI = 0, 1, 2, 3, 4
 # The HUD's texts (hud.py): the messages by C_MSG (1..), then the badge's.
 MESSAGES = ("PLAYER 2 JOINED", "CLANK DOCKED", "SHOCK-WRENCH!", "CHAIN REACTION!", "LIGHTNING RAM!",
             "THUNDER SLAM!", "RATCHET CHARGED!", "LIGHTNING LANDING!", "CHARGED WRENCH!", "TESLA TETHER")
 (MSG_JOINED, MSG_DOCKED, MSG_SHOCK, MSG_CHAIN, MSG_RAM, MSG_THUNDER, MSG_CHARGED, MSG_LANDING, MSG_WRENCH,
  MSG_TETHER) = range(1, len(MESSAGES) + 1)
-BADGES = ("P2 CLANK", "P2 DOCKED", "P2 GIANT ARMS")
-BADGE_OUT, BADGE_DOCKED, BADGE_PILOT = range(len(MESSAGES) + 1, len(MESSAGES) + 1 + len(BADGES))
+BADGES = ("P2 CLANK", "P2 DOCKED", "P2 GIANT CLANK")
+BADGE_OUT, BADGE_DOCKED, BADGE_MINI = range(len(MESSAGES) + 1, len(MESSAGES) + 1 + len(BADGES))
 TEXT_SIZE = 24                 # bytes a text (zero-ended)
 DRIVER_NONE, DRIVER_P2, DRIVER_AI = 0, 1, 2
 
 # Tuning, at TUNE (the docs' section 6). (name, kind, value): f float, i int, u unsigned (colours).
-TUNE = 0x380
+TUNE = 0x500
 TUNING = (
     ("T_SCALE", "f", 0.25),            # his moby's scale
     ("T_DT", "f", 1 / 60),
@@ -213,6 +237,43 @@ TUNING = (
     ("T_MSG_X", "i", 320), ("T_MSG_Y", "i", 110), ("T_MSG_FRAMES", "i", 90), ("T_MSG_FADE", "i", 20),
     ("T_HUD_BLUE", "u", 0x80FFC060), ("T_HUD_GOLD", "u", 0x8020D0FF), ("T_HUD_GREY", "u", 0x80A0A0A0),
     ("T_HUD_BACK", "u", 0x40000000), ("T_HUD_LOW", "u", 0x804060FF),
+    # the mini Giant Clank (mini.py; the user: with Golden Clank's mode and Player 2 in, "let the
+    # second player control a mini version of giant clank"; walks and jumps, Giant Clank's moves,
+    # Ratchet back to normal, half the giant legs' size): Golden Clank's model at T_MINI_SCALE
+    # (its legs are 0.25), walking at T_MINI_SPEED (T_MINI_GRIP of the way to the stick's speed a
+    # frame), T_MINI_JUMP up against T_MINI_GRAVITY, Cross again in the air: a hover falling at
+    # T_MINI_HOVER_FALL for T_MINI_HOVER_FRAMES while held; floor and walls by the game's ray
+    # (MINI_RAY); back beside Ratchet past T_MINI_LEASH or T_MINI_DROP below him
+    ("T_MINI_SCALE", "f", 0.1625), ("T_MINI_SPEED", "f", 5.5), ("T_MINI_GRIP", "f", 0.2), ("T_MINI_JUMP", "f", 9.0),
+    ("T_MINI_GRAVITY", "f", 30.0), ("T_MINI_HOVER_FALL", "f", 1.2), ("T_MINI_HOVER_FRAMES", "i", 90),
+    ("T_MINI_PROBE_UP", "f", 1.0), ("T_MINI_PROBE_DOWN", "f", 6.0), ("T_MINI_WALL_UP", "f", 0.5), ("T_MINI_WALL_REACH", "f", 0.5),
+    ("T_MINI_LEASH", "f", 16.0), ("T_MINI_DROP", "f", 12.0), ("T_MINI_SIDE", "f", 1.5), ("T_MINI_TURN", "f", 0.25),
+    ("T_MINI_WALK_RATE", "f", 0.6), ("T_MINI_YAW_OFFSET", "f", 0.0),
+    # his animations (Golden Clank's: idle 0, walk 3, jump 6, missiles 8, punches 9 and 10, bomb 12)
+    # and moves from its MOVE_TABLE: frames in all, the action's frame
+    ("T_MINI_IDLE_ANIM", "i", 0), ("T_MINI_WALK_ANIM", "i", 3), ("T_MINI_JUMP_ANIM", "i", 6), ("T_MINI_MISSILE_ANIM", "i", 8),
+    ("T_MINI_PUNCH_ANIM", "i", 9), ("T_MINI_BOMB_ANIM", "i", 12), ("T_MINI_BLEND", "i", 6),
+    ("T_MINI_PUNCH_FRAMES", "i", 45), ("T_MINI_PUNCH_ACTION", "i", 15), ("T_MINI_PUNCH_AHEAD", "f", 0.9),
+    ("T_MINI_PUNCH_UP", "f", 0.5), ("T_MINI_PUNCH_RADIUS", "f", 1.1), ("T_MINI_PUNCH_DAMAGE", "f", 2.0),
+    ("T_MINI_LUNGE", "f", 4.0), ("T_MINI_LUNGE_FROM", "i", 11), ("T_MINI_LUNGE_TO", "i", 16),
+    ("T_MINI_MISSILE_FRAMES", "i", 40), ("T_MINI_MISSILE_ACTION", "i", 10),
+    ("T_MINI_BOMB_FRAMES", "i", 72), ("T_MINI_BOMB_ACTION", "i", 45), ("T_MINI_BOMB_WAIT", "i", 600),
+    # his gold: Ratchet's light (his moby's +0x38, 00BBGGRR) times these in 256ths (red, green,
+    # blue: Golden Clank's GOLD_TINT)
+    ("T_MINI_TINT_R", "i", 563), ("T_MINI_TINT_G", "i", 320), ("T_MINI_TINT_B", "i", 38),
+    # Ratchet rides on his back (the user: "it would be cool, if ratchet could jump on his back"):
+    # coming down within T_MOUNT_R of him and T_MOUNT_ABOVE over him he gets on; then he is kept
+    # where the mini Giant Clank stands (his stick at rest, his facing the mini's) and hidden with
+    # all he carries; in his place rides Quartu's rider (the user: "reuse the quartu animation/
+    # model, do not resize ratchet, make og ratchet disappear"): his model at his size in his
+    # animation (mini.RIDER_ANIM_SLOT, Quartu's 129, carried into every level), T_RIDE_UP above the mini
+    # and T_RIDE_AHEAD along its facing in Giant Clank's model units, times T_MINI_SCALE (read on
+    # Quartu at scale 0.75: 6.6 up, 1.6 behind; the pose has its own offset at Ratchet's size, so
+    # the height for the mini was found by eye, 5.5: arms over his top); his Cross jumps off from up there,
+    # T_DISMOUNT_BACK behind the mini (straight up he came down inside it), T_RIDE_WAIT frames (longer
+    # than the jump: at 40 he landed on the mini and was on again) before he can get on again
+    ("T_MOUNT_R", "f", 1.2), ("T_MOUNT_ABOVE", "f", 0.3), ("T_RIDE_UP", "f", 5.5), ("T_RIDE_AHEAD", "f", -2.13),
+    ("T_RIDE_WAIT", "i", 90), ("T_DISMOUNT_BACK", "f", 1.2),
     ("T_PACK_GATE", "i", 1),           # the pack goes with Clank (the user's choice): Ratchet's pack moves off while P2 has him out
 )
 _at = TUNE

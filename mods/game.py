@@ -187,14 +187,17 @@ SEG_END = 0x700000
 # Golden Clank: +0x2a0..+0x340 (see mods/goldenclank.py)
 # Co-op Clank, also read by Golden Clank (all 0 without the co-op mod):
 #   +0x340 COOP_OUT: Clank is off Ratchet's back, +0x344 COOP_P2: Player 2 is in,
-#   +0x348 COOP_PILOT: Player 2 drives Giant Clank's arms, +0x34c COOP_PAD: Player 2's pad block
-#   (laid out as PAD; 0 = none), +0x350 COOP_HELD and +0x354 COOP_PRESSED: Player 2's buttons
-#   (PAD's bits) held and pressed this frame
+#   +0x348 spare, +0x34c COOP_PAD: Player 2's pad block (laid out as PAD; 0 = none),
+#   +0x350 COOP_HELD and +0x354 COOP_PRESSED: Player 2's buttons (PAD's bits) held and pressed
+#   this frame, +0x364 COOP_FIRE: Golden Clank is to fire from the mini Giant Clank (1 his
+#   missiles, 2 the bomb; Golden Clank clears it), +0x368 COOP_MINI_MOBY: his moby (0 = none)
 # Golden Clank, read by Co-op Clank (0 without Golden Clank): +0x358 GC_MODE: its mode is on
-#   (written each frame); +0x35c..+0x380 spare
+#   (written each frame), +0x35c GC_MINI: Player 2's mini Giant Clank is on (its switch with
+#   Player 2 in), +0x360 GC_MODEL: Giant Clank's installed model (0 = not yet); +0x36c..+0x380 spare
 STATE = 0x1606320
-COOP_OUT, COOP_P2, COOP_PILOT, COOP_PAD = 0x340, 0x344, 0x348, 0x34C
+COOP_OUT, COOP_P2, COOP_PAD = 0x340, 0x344, 0x34C
 COOP_HELD, COOP_PRESSED, GC_MODE = 0x350, 0x354, 0x358
+GC_MINI, GC_MODEL, COOP_FIRE, COOP_MINI_MOBY = 0x35C, 0x360, 0x364, 0x368
 STATE_END = 0x16066A0
 
 # Data: what a mod embeds is loaded through the ELF's three unused PT_LOAD entries (program

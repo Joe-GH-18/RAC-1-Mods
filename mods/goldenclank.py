@@ -1846,6 +1846,12 @@ gi_switch:
     stw 11, 0xa4(30)
     li 9, 0
     stw 9, {S_CHORD}(31)
+    lwz 9, {COOP_P2}(31)            # Player 2 in (mods/coop): his mini Giant Clank instead
+    cmpwi 9, 0
+    beq gi_own_mode
+    bl gc_mini_switch
+    b gi_moves
+gi_own_mode:
     lwz 9, {S_MODE}(31)
     xori 9, 9, 1
     stw 9, {S_MODE}(31)
@@ -1855,18 +1861,9 @@ gi_moves:
     cmpwi 9, 0
     beq gi_out
     lwz 11, 0xa0(30)
-    lwz 9, {COOP_PILOT}(31)         # two pilots (mods/coop): Player 2's buttons fire the arms
-    cmpwi 9, 0
-    beq gi_held
-    lwz 11, {COOP_HELD}(31)
-gi_held:
     andi. 12, 11, {MOVES}
     stw 12, {S_HELD}(31)
     lwz 11, 0xa4(30)
-    cmpwi 9, 0
-    beq gi_pressed
-    lwz 11, {COOP_PRESSED}(31)
-gi_pressed:
     andi. 12, 11, {MOVES}
     stw 12, {S_MOVES}(31)
     li 0, {MOVES}
@@ -1918,12 +1915,163 @@ gi_free:                            # on a gun and the like: what waits goes to 
     li 9, 0
     stw 9, {S_CHORD}(31)
 gi_out:
-    lwz 9, {S_MODE}(31)             # for mods/coop (GC_MODE)
+    lwz 9, {S_MODE}(31)             # for mods/coop (GC_MODE, GC_MINI, GC_MODEL; COOP_FIRE)
     stw 9, {GC_MODE}(31)
+    lwz 9, {COOP_P2}(31)
+    cmpwi 9, 0
+    bne gi_mini_kept
+    stw 9, {GC_MINI}(31)            # (Player 2 gone: no mini Giant Clank)
+gi_mini_kept:
+    lwz 9, {S_MODEL}(31)
+    stw 9, {GC_MODEL}(31)
+    bl gc_coop_fire
     ld 29, 0x80(1)
     ld 30, 0x78(1)
     ld 31, 0x70(1)
     addi 1, 1, 0x90
+    ld 0, 0x10(1)
+    mtlr 0
+    blr
+
+gc_mini_switch:                     # (r29/r31) with Player 2 in (mods/coop): his mini Giant Clank on or off;
+    mflr 0                          #  Ratchet's own mode goes off first (the user: "back to normal Ratchet")
+    std 0, 0x10(1)
+    stdu 1, -0x70(1)
+    lwz 9, {S_MODE}(31)
+    cmpwi 9, 0
+    beq gms_mini
+    li 9, 0
+    stw 9, {S_MODE}(31)
+    bl gc_switch
+gms_mini:
+    bl gc_install
+    lwz 9, {S_MODEL}(31)
+    stw 9, {GC_MODEL}(31)
+    lwz 9, {GC_MINI}(31)
+    xori 9, 9, 1
+    stw 9, {GC_MINI}(31)
+    addi 1, 1, 0x70
+    ld 0, 0x10(1)
+    mtlr 0
+    blr
+
+gc_coop_fire:                       # (r29/r31) the mini Giant Clank (mods/coop) fires: COOP_FIRE 1 his missiles from his
+    lwz 9, {COOP_FIRE}(31)          #  forearms, 2 the bomb ahead of him; half the size of the giant's
+    cmpwi 9, 0
+    beqlr
+    mflr 0
+    std 0, 0x10(1)
+    stdu 1, -0xd0(1)
+    std 28, 0x70(1)
+    std 27, 0x78(1)
+    std 26, 0x80(1)
+    stfd 31, 0x88(1)
+    li 10, 0
+    stw 10, {COOP_FIRE}(31)
+    mr 27, 9
+    lwz 28, {COOP_MINI_MOBY}(31)
+    cmpwi 28, 0
+    beq gcf_out
+    lfs 31, 0x48(28)                # his heading
+    andi. 9, 27, 1
+    beq gcf_bomb
+    lwz 3, {G_MISSILE_MODEL}(29)
+    cmpwi 3, 0
+    beq gcf_bomb
+    li 4, {MISSILE_CLASS}
+    bl gc_register
+    cmpwi 3, 0
+    beq gcf_bomb
+    li 26, {MISSILE_JOINTS_FIRST}
+gcf_one:
+    mr 3, 28
+    mr 4, 26
+    addi 5, 1, 0x90
+    bl {JOINT_POSITION}
+    fmr 1, 31
+    bl {COS}
+    lfs 0, {G_MISSILE_AHEAD}(29)
+    lfs 2, 0x90(1)
+    fmadds 2, 1, 0, 2
+    stfs 2, 0x90(1)
+    fmr 1, 31
+    bl {SIN}
+    lfs 0, {G_MISSILE_AHEAD}(29)
+    lfs 2, 0x94(1)
+    fmadds 2, 1, 0, 2
+    stfs 2, 0x94(1)
+    lis 9, {POOL_HA}
+    addi 9, 9, {POOL_LO}
+    lis 3, {HERO_HA}
+    addi 3, 3, {HERO_LO}
+    lwz 3, 0x2080(3)
+    addi 4, 1, 0x90
+    fmr 1, 31
+    lfs 2, {P_ZERO}(9)
+    lfs 3, {P_HALF}(9)
+    fmr 4, 1
+    fmr 5, 2
+    li 7, 0
+    bl {MISSILE_SPAWN}
+    cmpwi 3, 0
+    beq gcf_next
+    lfs 0, 0x2c(3)                  # half the giant's missile
+    lfs 1, {G_MISSILE_SIZE}(29)
+    fmuls 0, 0, 1
+    lis 9, {POOL_HA}
+    addi 9, 9, {POOL_LO}
+    lfs 1, {P_HALF}(9)
+    fmuls 0, 0, 1
+    stfs 0, 0x2c(3)
+gcf_next:
+    addi 26, 26, 1
+    cmpwi 26, {MISSILE_JOINTS_LAST}
+    ble gcf_one
+gcf_bomb:
+    andi. 9, 27, 2
+    beq gcf_out
+    li 3, 0
+    li 4, {BOMB_CLASS}
+    bl gc_register
+    cmpwi 3, 0
+    beq gcf_out
+    lis 9, {POOL_HA}
+    addi 9, 9, {POOL_LO}
+    lfs 0, {G_BOMB_AT}(29)          # half the giant's distance ahead and up
+    lfs 1, {P_HALF}(9)
+    fmuls 0, 0, 1
+    stfs 0, 0xb0(1)
+    fmr 1, 31
+    bl {COS}
+    lfs 0, 0xb0(1)
+    lfs 2, 0x10(28)
+    fmadds 2, 1, 0, 2
+    stfs 2, 0x90(1)
+    fmr 1, 31
+    bl {SIN}
+    lfs 0, 0xb0(1)
+    lfs 2, 0x14(28)
+    fmadds 2, 1, 0, 2
+    stfs 2, 0x94(1)
+    lis 9, {POOL_HA}
+    addi 9, 9, {POOL_LO}
+    lfs 0, {G_BOMB_AT} + 4(29)
+    lfs 1, {P_HALF}(9)
+    fmuls 0, 0, 1
+    lfs 2, 0x18(28)
+    fadds 2, 2, 0
+    stfs 2, 0x98(1)
+    lfs 0, {P_ZERO}(9)
+    stfs 0, 0x9c(1)
+    ld 5, 0x90(1)
+    ld 6, 0x98(1)
+    bl {BOMB_SPAWN}
+gcf_out:
+    lfd 31, 0x88(1)
+    ld 26, 0x80(1)
+    ld 27, 0x78(1)
+    ld 28, 0x70(1)
+    addi 1, 1, 0xd0
     ld 0, 0x10(1)
     mtlr 0
     blr
@@ -5508,6 +5656,8 @@ gc_bomb_colour_0:                  # (r3: a colour of the bomb's, 0xAABBGGRR; r0
     lis 11, {STATE_HA}
     addi 11, 11, {STATE_LO}
     lwz 12, {S_MODE}(11)
+    lwz 0, {GC_MINI}(11)            # (or the mini Giant Clank's bomb)
+    or 12, 12, 0
     cmpwi 12, 0
     beq gbc_0_game
     lis 11, {HERO_HA}
@@ -5530,6 +5680,8 @@ gc_bomb_colour_1:                  # (r5: a colour of the bomb's, 0xAABBGGRR; r0
     lis 11, {STATE_HA}
     addi 11, 11, {STATE_LO}
     lwz 12, {S_MODE}(11)
+    lwz 0, {GC_MINI}(11)            # (or the mini Giant Clank's bomb)
+    or 12, 12, 0
     cmpwi 12, 0
     beq gbc_1_game
     lis 11, {HERO_HA}
@@ -5552,6 +5704,8 @@ gc_bomb_colour_2:                  # (r5 and r6: a colour of the bomb's, 0xAABBG
     lis 11, {STATE_HA}
     addi 11, 11, {STATE_LO}
     lwz 12, {S_MODE}(11)
+    lwz 0, {GC_MINI}(11)            # (or the mini Giant Clank's bomb)
+    or 12, 12, 0
     cmpwi 12, 0
     beq gbc_2_game
     lis 11, {HERO_HA}
@@ -5582,6 +5736,8 @@ gc_bomb_channels:                   # (r4, r5, r6 = red, green, blue of a colour
     lis 11, {STATE_HA}
     addi 11, 11, {STATE_LO}
     lwz 12, {S_MODE}(11)
+    lwz 0, {GC_MINI}(11)            # (or the mini Giant Clank's bomb)
+    or 12, 12, 0
     cmpwi 12, 0
     beq gbch_game
     lis 11, {HERO_HA}
@@ -5602,6 +5758,8 @@ gc_bomb_kind_a:                     # (in the bomb's update, r3 = the hero kind)
     lis 11, {STATE_HA}
     addi 11, 11, {STATE_LO}
     lwz 12, {S_MODE}(11)
+    lwz 0, {GC_MINI}(11)
+    or 12, 12, 0
     cmpwi 12, 1
 gbk_a_back:
     b {BOMB_KIND_A_BACK}
@@ -5612,6 +5770,8 @@ gc_bomb_kind_b:
     lis 11, {STATE_HA}
     addi 11, 11, {STATE_LO}
     lwz 12, {S_MODE}(11)
+    lwz 0, {GC_MINI}(11)
+    or 12, 12, 0
     cmpwi 12, 1
 gbk_b_back:
     b {BOMB_KIND_B_BACK}

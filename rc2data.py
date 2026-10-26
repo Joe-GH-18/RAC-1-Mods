@@ -127,6 +127,21 @@ def animation(rc2, index, vaddr):
     return bytes(anim)
 
 
+def level_animation(rc1, level, index, vaddr):
+    """Ratchet's animation index from an RC1 level (one that has it: some are only in the levels
+    that use them, as the pose riding Giant Clank's back, 129, in levels 0, 15 and 18), for the
+    address vaddr, its frame pointers made absolute, as animation."""
+    data = rc1.read(f"level{level}/engine.ps3")
+    table = struct.unpack_from(">I", data, 0x18)[0]
+    offsets = struct.unpack_from(f">{ANIMATIONS}I", data, table)
+    start = offsets[index]
+    anim = bytearray(data[start:min([o for o in offsets if o > start] + [len(data)])])
+    for i in range(anim[0x10]):
+        at = 0x1C + 4 * i
+        struct.pack_into(">I", anim, at, struct.unpack_from(">I", anim, at)[0] + vaddr)
+    return bytes(anim)
+
+
 def sound_bank(rc2, level, definitions):
     """The sound bank of an RC2 level cut down to the samples of these definitions' sounds.
 
@@ -685,10 +700,10 @@ EXTRACTS = dict(animation=animation, charge_sounds=charge_sounds, boots_model=bo
                 giant_part=giant_part, giant_ball_vertices=giant_ball_vertices, giant_ball_indices=giant_ball_indices,
                 giant_tube_vertices=giant_tube_vertices, giant_tube_indices=giant_tube_indices, clank_gold_eyes=clank_gold_eyes,
                 giant_sounds=giant_sounds, level_model=level_model, level_textures=level_textures,
-                level_pixels=level_pixels)
+                level_pixels=level_pixels, level_animation=level_animation)
 RC1_EXTRACTS = {"level_model", "level_textures", "level_pixels", "giant_model", "giant_textures", "giant_pixels", "giant_part", "giant_ball_vertices", "giant_ball_indices",
                 "giant_tube_vertices", "giant_tube_indices", "clank_gold_eyes",
-                "giant_sounds"}
+                "giant_sounds", "level_animation"}
 
 
 def game(name):

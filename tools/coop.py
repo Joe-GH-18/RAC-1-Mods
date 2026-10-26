@@ -131,7 +131,7 @@ def state():
     run = read(at, L.RUNTIME_SIZE)
     word = lambda off: struct.unpack_from(">i", run, off)[0]
     flt = lambda off, n=1: struct.unpack_from(f">{n}f", run, off)
-    modes = {L.MODE_DOCKED: "docked", L.MODE_POP: "popping off", L.MODE_FLY: "flying", L.MODE_DOCKING: "docking"}
+    modes = {L.MODE_DOCKED: "docked", L.MODE_POP: "popping off", L.MODE_FLY: "flying", L.MODE_DOCKING: "docking", L.MODE_MINI: "mini Giant Clank"}
     drivers = {L.DRIVER_NONE: "nobody", L.DRIVER_P2: "Player 2", L.DRIVER_AI: "AI"}
     print(f"mode {modes.get(word(L.C_MODE), word(L.C_MODE))} ({word(L.C_TIMER)} frames), driver "
           f"{drivers.get(word(L.C_DRIVER), word(L.C_DRIVER))}, energy {flt(L.C_ENERGY)[0]:.1f}, hover {flt(L.C_HOVER)[0]:.2f}")
@@ -140,7 +140,12 @@ def state():
     print(f"mobys: body {word(L.C_BODY) & 0xffffffff:#x}, wings {word(L.C_WINGS) & 0xffffffff:#x}, jets "
           f"{word(L.C_JET_L) & 0xffffffff:#x} {word(L.C_JET_R) & 0xffffffff:#x}, model {word(L.C_MODEL) & 0xffffffff:#x}")
     print(f"target {word(L.C_TARGET) & 0xffffffff:#x}, zap {word(L.C_ZAP)}, punch {word(L.C_PUNCH)} (wait "
-          f"{word(L.C_PUNCH_WAIT)}), overcharge {word(L.C_OVER)} ({word(L.C_OVER_TARGETS)} targets), boost {word(L.C_BOOST)}")
+          f"{word(L.C_PUNCH_WAIT)}), chain targets {word(L.C_OVER_TARGETS)}, boost {word(L.C_BOOST)}")
+    if word(L.C_MODE) == L.MODE_MINI:
+        print(f"mini: moby {word(L.C_MINI) & 0xffffffff:#x}, place " + "{:.2f} {:.2f} {:.2f}".format(*flt(L.C_MINI_POS, 3))
+              + ", velocity {:.2f} {:.2f} {:.2f}".format(*flt(L.C_MINI_VEL, 3))
+              + f", yaw {flt(L.C_MINI_YAW)[0]:+.2f}, air {word(L.C_MINI_AIR)}, move {word(L.C_MINI_MOVE)} "
+              f"({word(L.C_MINI_T)} frames), hover {word(L.C_MINI_HOVER)}, anim {word(L.C_MINI_ANIM)}")
 
 
 def names(bits):

@@ -583,6 +583,10 @@ cj_values:
 
 coop_forget:                        # (r29) a new level: the mobys went with the old one
     li 9, 0
+    stw 9, {C_MINI}(29)
+    stw 9, {C_RIDE}(29)
+    stw 9, {C_RIDE_N}(29)            # (what was hidden, and the rider, went too)
+    stw 9, {C_RIDER}(29)
     stw 9, {MANIPS_ON}(29)
     stw 9, {C_BODY}(29)
     stw 9, {C_WINGS}(29)
