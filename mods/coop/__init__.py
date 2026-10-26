@@ -16,7 +16,7 @@ from .. import sweep
 from . import body, combat, flight, fx, hud, layout, pad
 
 # The parts' game addresses and numbers, as the module's own (build.py lets branches go to those).
-globals().update({name: value for part in (pad, body, flight, combat, fx) for name, value in vars(part).items()
+globals().update({name: value for part in (pad, body, flight, combat, fx, hud) for name, value in vars(part).items()
                   if name.isupper() and isinstance(value, int)})
 
 NAME = "coop"
@@ -39,7 +39,8 @@ def reserve(size):
 def hooks(args):
     return [Hook(pad.PAD_READ_HOOK, "coop_pad", pad.PAD_READ_HOOK_WORD),
             *(Hook(site, "coop_frame", HERO_MAIN, chain=True) for site in FRAME_HOOKS),
-            Hook(HUD_HOOK, "coop_hud", HUD_HOOK_WORD, chain=True)]
+            Hook(HUD_HOOK, "coop_hud", HUD_HOOK_WORD, chain=True),
+            Hook(hud.HUD_DRAW_HOOK, "coop_hud_draw", hud.HUD_DRAW_HOOK_WORD)]
 
 
 def data(args):
@@ -62,7 +63,7 @@ def fields(args, addr):
     entries = (len(textures) - 8) // 0x24
     assert len(model) % 0x10 == 0
     skip = 31 - (body.SKIP_UPDATE.bit_length() - 1)
-    constants = {name: value for module in (pad, body, flight, combat, fx) for name, value in vars(module).items()
+    constants = {name: value for module in (pad, body, flight, combat, fx, hud) for name, value in vars(module).items()
                  if name.isupper() and isinstance(value, int)}
     return dict(**constants, **layout.fields(), **pair("COOP", addr["coop"] + len(layout.TAG)),
                 **pair("CLANK_MODEL", addr["clank_model"]), **pair("CLANK_TEXTURES", addr["clank_textures"]),

@@ -83,9 +83,17 @@ C_DESC = 0x2F8                 # the draw callback's function descriptor (code, 
 RUNTIME_SIZE = 0x380
 
 MODE_DOCKED, MODE_POP, MODE_FLY, MODE_DOCKING = 0, 1, 2, 3
+# The HUD's texts (hud.py): the messages by C_MSG (1..), then the badge's.
+MESSAGES = ("PLAYER 2 JOINED", "CLANK DOCKED", "SHOCK-WRENCH!", "CHAIN REACTION!", "LIGHTNING RAM!",
+            "THUNDER SLAM!", "RATCHET CHARGED!", "LIGHTNING LANDING!", "CHARGED WRENCH!", "TESLA TETHER")
+(MSG_JOINED, MSG_DOCKED, MSG_SHOCK, MSG_CHAIN, MSG_RAM, MSG_THUNDER, MSG_CHARGED, MSG_LANDING, MSG_WRENCH,
+ MSG_TETHER) = range(1, len(MESSAGES) + 1)
+BADGES = ("P2 CLANK", "P2 DOCKED", "P2 GIANT ARMS")
+BADGE_OUT, BADGE_DOCKED, BADGE_PILOT = range(len(MESSAGES) + 1, len(MESSAGES) + 1 + len(BADGES))
+TEXT_SIZE = 24                 # bytes a text (zero-ended)
 DRIVER_NONE, DRIVER_P2, DRIVER_AI = 0, 1, 2
 
-# Tuning, at TUNE (the docs' section 6). (name, kind, value): f float, i int.
+# Tuning, at TUNE (the docs' section 6). (name, kind, value): f float, i int, u unsigned (colours).
 TUNE = 0x380
 TUNING = (
     ("T_SCALE", "f", 0.25),            # his moby's scale
@@ -199,6 +207,12 @@ TUNING = (
     ("T_CAGE_R", "f", 0.55), ("T_CAGE_UP", "f", 0.55), ("T_CAGE_SPIN", "f", 14.0), ("T_CAGE_LOW", "f", -0.35), ("T_CAGE_HIGH", "f", 0.4),
     ("T_COMBO_BURST", "i", 10), ("T_COMBO_BURST_R", "f", 1.7), ("T_COMBO_SHAKE", "f", 0.08),
     ("T_HIT_BURST", "i", 3), ("T_HIT_BURST_R", "f", 0.5), ("T_SEAT_BURST", "i", 7), ("T_SEAT_BURST_R", "f", 0.9),
+    # the HUD (hud.py; screen units of the game's HUD, its colours 0xAABBGGRR, 0x80 opaque): the
+    # badge's top left, the bar under its text, the messages' centre and how long they stay
+    ("T_HUD_X", "i", 30), ("T_HUD_Y", "i", 28), ("T_BAR_BELOW", "i", 17), ("T_BAR_W", "i", 64), ("T_BAR_H", "i", 4),
+    ("T_MSG_X", "i", 320), ("T_MSG_Y", "i", 110), ("T_MSG_FRAMES", "i", 90), ("T_MSG_FADE", "i", 20),
+    ("T_HUD_BLUE", "u", 0x80FFC060), ("T_HUD_GOLD", "u", 0x8020D0FF), ("T_HUD_GREY", "u", 0x80A0A0A0),
+    ("T_HUD_BACK", "u", 0x40000000), ("T_HUD_LOW", "u", 0x804060FF),
     ("T_PACK_GATE", "i", 1),           # the pack goes with Clank (the user's choice): Ratchet's pack moves off while P2 has him out
 )
 _at = TUNE
@@ -235,17 +249,21 @@ FX_COUNT = 16
 F_KIND, F_LEFT, F_TOTAL, F_MOBY, F_A, F_B, F_RADIUS, F_COUNT = 0x0, 0x4, 0x8, 0xC, 0x10, 0x20, 0x30, 0x34
 FX_BURST, FX_RING, FX_ARC, FX_CAGE = 1, 2, 3, 4
 FX = (MANIPS_ON + 4 + 0xF) & ~0xF
-BLOCK_SIZE = (FX + FX_COUNT * 0x40 + 0xFF) & ~0xFF
+TEXTS = FX + FX_COUNT * 0x40   # MESSAGES then BADGES, TEXT_SIZE bytes each, from id 1
+BLOCK_SIZE = (TEXTS + (len(MESSAGES) + len(BADGES)) * TEXT_SIZE + 0xFF) & ~0xFF
 
 
 def block():
     """The block's bytes behind the tag: runtime zeros, the tuning values, the effects."""
     data = bytearray(BLOCK_SIZE)
     for name, kind, value in TUNING:
-        struct.pack_into(">f" if kind == "f" else ">i", data, globals()[name], value)
+        struct.pack_into({"f": ">f", "i": ">i", "u": ">I"}[kind], data, globals()[name], value)
     for at, (pos, rise, f1, scatter, colours, life, count) in EFFECTS.items():
         struct.pack_into(PUFFS, data, at, *pos, *rise, 0.0, f1, scatter, *colours, *life, count)
     struct.pack_into(">i", data, C_ANIM, -1)
+    for k, text in enumerate(MESSAGES + BADGES):
+        assert len(text) < TEXT_SIZE
+        data[TEXTS + TEXT_SIZE * k:TEXTS + TEXT_SIZE * k + len(text)] = text.encode()
     return bytes(data)
 
 

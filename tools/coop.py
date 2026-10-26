@@ -164,7 +164,7 @@ def main():
     elif command in ("get", "set"):
         at, kinds = block(), {name: kind for name, kind, _ in L.TUNING}
         for name in (rest if command == "get" else rest[:1]):
-            fmt = ">i" if kinds.get(name, "f" if name.startswith("T_") else "i") == "i" else ">f"
+            fmt = {"f": ">f", "i": ">i", "u": ">I"}[kinds.get(name, "f" if name.startswith("T_") else "i")]
             if command == "set":
                 value = float(rest[1]) if fmt == ">f" else int(rest[1], 0)
                 write(at + getattr(L, name), struct.pack(fmt, value))

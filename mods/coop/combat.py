@@ -631,8 +631,8 @@ coop_combo_go:                      # (r3 = a mark; r29/r30) its double damage s
     bl coop_shake
     lwz 3, {T_SOUND_COMBO}(29)
     bl coop_sound
-    li 9, 45
-    stw 9, {C_COMBO_FLASH}(29)
+    li 3, {MSG_SHOCK}
+    bl coop_msg
 ccg_out:
     addi 1, 1, 0x70
     ld 0, 0x10(1)
@@ -898,6 +898,12 @@ cz_link_energy:
     lwz 9, {C_LINK}(29)             # held long enough: Ratchet charged
     addi 9, 9, 1
     stw 9, {C_LINK}(29)
+    cmpwi 9, 1
+    bne cz_linked
+    li 3, {MSG_TETHER}
+    bl coop_msg
+    lwz 9, {C_LINK}(29)
+cz_linked:
     lwz 10, {T_CHARGE_FRAMES}(29)
     cmpw 9, 10
     bne cz_fence
@@ -1115,6 +1121,8 @@ cpu_overload:                       # (r3 its mark) the Lightning Ram: three tim
     bl coop_shake
     lwz 3, {T_SOUND_COMBO}(29)
     bl coop_sound
+    li 3, {MSG_RAM}
+    bl coop_msg
 cpu_out:
     ld 28, 0x70(1)
     addi 1, 1, 0x80
@@ -1298,6 +1306,8 @@ coop_pound_hit:                     # (r29/r30) the shockwave: a ring, a star, a
     bl coop_burst
     lwz 3, {T_SOUND_COMBO}(29)
     bl coop_sound
+    li 3, {MSG_THUNDER}
+    bl coop_msg
 cph_plain:
     li 3, {FX_RING}
     lwz 4, {T_RING_FRAMES}(29)
@@ -1575,6 +1585,8 @@ crx_out:
     lfs 1, {T_COMBO_SHAKE}(29)
     li 3, 10
     bl coop_shake
+    li 3, {MSG_CHAIN}
+    bl coop_msg
 crx_done:
     ld 26, 0x80(1)
     ld 27, 0x78(1)
@@ -1649,6 +1661,8 @@ coop_ratchet_charge:                # (r29/r30) Ratchet charged: a cage of light
     bl coop_shake
     lwz 3, {T_SOUND_COMBO}(29)
     bl coop_sound
+    li 3, {MSG_CHARGED}
+    bl coop_msg
     addi 1, 1, 0x70
     ld 0, 0x10(1)
     mtlr 0
@@ -1753,6 +1767,8 @@ coop_wrench_arc:                    # (r3 the enemy Ratchet's wrench hit, f1 its
     bl coop_hit
     mr 3, 28
     bl coop_hit_burst
+    li 3, {MSG_WRENCH}
+    bl coop_msg
     li 9, 1                         # the next: the nearest other within T_ARC_REACH
     stw 9, {C_OVER_TARGETS}(29)
     stw 28, {C_LINKS}(29)
@@ -1837,6 +1853,8 @@ crt_down:
     bl coop_shake
     lwz 3, {T_SOUND_POUND}(29)
     bl coop_sound
+    li 3, {MSG_LANDING}
+    bl coop_msg
     addi 1, 1, 0x70
     ld 0, 0x10(1)
     mtlr 0
