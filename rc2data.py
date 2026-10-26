@@ -199,23 +199,27 @@ def boots_pixels(rc2):
     return rc2.read("level1/vram.ps3")[at:at + BOOTS_PIXELS]
 
 
-def _giant(rc1, cls=GIANT_CLASS):
-    """Giant Clank's model (or another class's of his level, as his missile's) in level 18's
-    engine.ps3 -> (the level file, offset, size): the size reaches to the next model of the
-    model table (+0: its offset; count, then {id, offset})."""
-    level = rc1.read(f"level{GIANT_LEVEL}/engine.ps3")
-    table = struct.unpack_from(">I", level, 0)[0]
-    count = struct.unpack_from(">I", level, table)[0]
-    models = dict(struct.unpack_from(">II", level, table + 4 + 8 * i) for i in range(count))
+def _model(rc1, level, cls):
+    """A class's model in an RC1 level's engine.ps3 -> (the level file, offset, size): the size
+    reaches to the next model of the model table (+0: its offset; count, then {id, offset})."""
+    data = rc1.read(f"level{level}/engine.ps3")
+    table = struct.unpack_from(">I", data, 0)[0]
+    count = struct.unpack_from(">I", data, table)[0]
+    models = dict(struct.unpack_from(">II", data, table + 4 + 8 * i) for i in range(count))
     start = models[cls]
-    end = min([offset for offset in models.values() if offset > start] + [len(level)])
-    return level, start, end - start
+    end = min([offset for offset in models.values() if offset > start] + [len(data)])
+    return data, start, end - start
 
 
-def _giant_textures(rc1, cls=GIANT_CLASS):
+def _giant(rc1, cls=GIANT_CLASS):
+    """Giant Clank's model (or another class's of his level, as his missile's) in level 18."""
+    return _model(rc1, GIANT_LEVEL, cls)
+
+
+def _model_textures(rc1, level, cls):
     """The distinct texture ids of the model's mesh groups, in order, and each group's index in that list."""
-    level, start, size = _giant(rc1, cls)
-    model = level[start:start + size]
+    data, start, size = _model(rc1, level, cls)
+    model = data[start:start + size]
     mesh = struct.unpack_from(">I", model, 0)[0]
     count, groups = struct.unpack_from(">I", model, mesh)[0], struct.unpack_from(">I", model, mesh + 8)[0]
     ids = [struct.unpack_from(">I", model, groups + 0x10 * i)[0] for i in range(count)]
@@ -223,13 +227,18 @@ def _giant_textures(rc1, cls=GIANT_CLASS):
     return distinct, [distinct.index(i) for i in ids]
 
 
-def giant_model(rc1, cls=GIANT_CLASS):
-    """Giant Clank's model (or cls's), its groups' texture ids cleared (the mod puts its own
-    entries there) and without its sounds (9; header +0xd the count, +0x28 the definitions):
-    their places in the sound bank are filled in by the loader of his own levels only, and his
-    animations playing them elsewhere crashed the sound update (0x15be68)."""
-    level, start, size = _giant(rc1, cls)
-    model = bytearray(level[start:start + size])
+def _giant_textures(rc1, cls=GIANT_CLASS):
+    return _model_textures(rc1, GIANT_LEVEL, cls)
+
+
+def level_model(rc1, level, cls):
+    """A class's model of an RC1 level, for a mod to install in every level: its groups' texture
+    ids cleared (the mod puts its own entries there) and without its sounds (header +0xd the
+    count, +0x28 the definitions): their places in the sound bank are filled in by the loader
+    of its own levels only, and Giant Clank's animations playing them elsewhere crashed the
+    sound update (0x15be68)."""
+    data, start, size = _model(rc1, level, cls)
+    model = bytearray(data[start:start + size])
     model[0xD] = 0
     struct.pack_into(">I", model, 0x28, 0)
     mesh = struct.unpack_from(">I", model, 0)[0]
@@ -237,6 +246,11 @@ def giant_model(rc1, cls=GIANT_CLASS):
     for i in range(count):
         struct.pack_into(">I", model, groups + 0x10 * i, 0)
     return bytes(model)
+
+
+def giant_model(rc1, cls=GIANT_CLASS):
+    """Giant Clank's model (or cls's of his level 18), as level_model."""
+    return level_model(rc1, GIANT_LEVEL, cls)
 
 
 def giant_sounds(rc1, classes):
@@ -266,20 +280,25 @@ def giant_sounds(rc1, classes):
     return head + bytes(-len(head) % 16) + sound_bank(rc1, GIANT_LEVEL, defs)
 
 
-def giant_textures(rc1, cls=GIANT_CLASS):
-    """Giant Clank's textures (or cls's): the group count, each group's texture (u8 each, padded
-    to 8), then the texture entries with +0 the pixels' offset in giant_pixels."""
-    distinct, uses = _giant_textures(rc1, cls)
-    level = rc1.read(f"level{GIANT_LEVEL}/engine.ps3")
-    table = struct.unpack_from(">I", level, 0x54)[0]
+def level_textures(rc1, level, cls):
+    """A level model's textures: the group count, each group's texture (u8 each, padded to 8),
+    then the texture entries with +0 the pixels' offset in level_pixels."""
+    distinct, uses = _model_textures(rc1, level, cls)
+    data = rc1.read(f"level{level}/engine.ps3")
+    table = struct.unpack_from(">I", data, 0x54)[0]
     out = bytearray(bytes([len(uses)] + uses).ljust(8, b"\0"))
     at = 0
     for texture in distinct:
-        entry = bytearray(level[table + 0x24 * texture:table + 0x24 * texture + 0x24])
+        entry = bytearray(data[table + 0x24 * texture:table + 0x24 * texture + 0x24])
         struct.pack_into(">I", entry, 0, at)
-        at += _pixels_size(level, table, texture)
+        at += _pixels_size(data, table, texture)
         out += entry
     return bytes(out)
+
+
+def giant_textures(rc1, cls=GIANT_CLASS):
+    """Giant Clank's textures (or cls's), as level_textures."""
+    return level_textures(rc1, GIANT_LEVEL, cls)
 
 
 def _pixels_size(level, table, texture):
@@ -287,21 +306,26 @@ def _pixels_size(level, table, texture):
     return struct.unpack_from(">I", level, table + 0x24 * (texture + 1))[0] - struct.unpack_from(">I", level, table + 0x24 * texture)[0]
 
 
-def giant_pixels(rc1, cls=GIANT_CLASS):
-    """The pixels of Giant Clank's textures (or cls's), one after the other (each 0x80-aligned in vram.ps3, so kept so).
-    His own have the dark metal of his shoulders and of the ball made light (_lift)."""
-    distinct, uses = _giant_textures(rc1, cls)
-    level, vram = rc1.read(f"level{GIANT_LEVEL}/engine.ps3"), rc1.read(f"level{GIANT_LEVEL}/vram.ps3")
-    table = struct.unpack_from(">I", level, 0x54)[0]
+def level_pixels(rc1, level, cls):
+    """The pixels of a level model's textures, one after the other (each 0x80-aligned in vram.ps3, so kept so)."""
+    distinct, uses = _model_textures(rc1, level, cls)
+    data, vram = rc1.read(f"level{level}/engine.ps3"), rc1.read(f"level{level}/vram.ps3")
+    table = struct.unpack_from(">I", data, 0x54)[0]
     out = bytearray()
     for texture in distinct:
-        at = struct.unpack_from(">I", level, table + 0x24 * texture)[0]
-        pixels = vram[at:at + _pixels_size(level, table, texture)]
-        if cls == GIANT_CLASS:
+        at = struct.unpack_from(">I", data, table + 0x24 * texture)[0]
+        pixels = vram[at:at + _pixels_size(data, table, texture)]
+        if level == GIANT_LEVEL and cls == GIANT_CLASS:
             group = uses.index(distinct.index(texture))
-            pixels = _lift(rc1, group, level[table + 0x24 * texture:table + 0x24 * texture + 0x24], pixels)
+            pixels = _lift(rc1, group, data[table + 0x24 * texture:table + 0x24 * texture + 0x24], pixels)
         out += pixels
     return bytes(out)
+
+
+def giant_pixels(rc1, cls=GIANT_CLASS):
+    """The pixels of Giant Clank's textures (or cls's). His own have the dark metal of his
+    shoulders and of the ball made light (_lift)."""
+    return level_pixels(rc1, GIANT_LEVEL, cls)
 
 
 # The mod tints his parts gold, which turns his light grey metal gold but his dark metal brown:
@@ -660,8 +684,9 @@ EXTRACTS = dict(animation=animation, charge_sounds=charge_sounds, boots_model=bo
                 giant_model=giant_model, giant_textures=giant_textures, giant_pixels=giant_pixels,
                 giant_part=giant_part, giant_ball_vertices=giant_ball_vertices, giant_ball_indices=giant_ball_indices,
                 giant_tube_vertices=giant_tube_vertices, giant_tube_indices=giant_tube_indices, clank_gold_eyes=clank_gold_eyes,
-                giant_sounds=giant_sounds)
-RC1_EXTRACTS = {"giant_model", "giant_textures", "giant_pixels", "giant_part", "giant_ball_vertices", "giant_ball_indices",
+                giant_sounds=giant_sounds, level_model=level_model, level_textures=level_textures,
+                level_pixels=level_pixels)
+RC1_EXTRACTS = {"level_model", "level_textures", "level_pixels", "giant_model", "giant_textures", "giant_pixels", "giant_part", "giant_ball_vertices", "giant_ball_indices",
                 "giant_tube_vertices", "giant_tube_indices", "clank_gold_eyes",
                 "giant_sounds"}
 

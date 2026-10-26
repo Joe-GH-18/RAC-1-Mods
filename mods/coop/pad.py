@@ -12,7 +12,8 @@ Player 1's the same way, once per frame (FRAME_COUNTER), and the first that deli
 2's: its block, laid out as PAD, goes to STATE + COOP_PAD (0 = none). The block's own button
 words are kept by the driver (0x4eb6e8 with the block's history), and the mod keeps its own
 "pressed this frame" of the held word as well (C_PRESSED), for the case they are not filled
-the same way as PAD's.
+the same way as PAD's. With C_TEST set, C_TEST_HELD is added to the held word (and
+flight.py takes C_TEST_STICK): tools/coop.py drives Player 2 that way without a second pad.
 """
 from ..game import *  # noqa: F401,F403
 
@@ -79,10 +80,20 @@ cp_found:
     lwz 11, {PAD_HELD}(30)
     stw 28, {C_PORT}(31)
 cp_held:
+    lwz 12, {C_TEST}(31)                # the test input's buttons too
+    cmpwi 12, 0
+    beq cp_pressed
+    lwz 12, {C_TEST_HELD}(31)
+    or 11, 11, 12
+cp_pressed:
     lwz 12, {C_HELD}(31)
     andc 12, 11, 12
     stw 11, {C_HELD}(31)
     stw 12, {C_PRESSED}(31)
+    lis 10, {STATE_HA}              # for Golden Clank's two pilots (COOP_PILOT)
+    addi 10, 10, {STATE_LO}
+    stw 11, {COOP_HELD}(10)
+    stw 12, {COOP_PRESSED}(10)
 cp_done:
     ld 0, 0x80(1)
     addi 1, 1, 0x70

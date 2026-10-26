@@ -155,7 +155,7 @@ def pool(args):
 
 def parts(args):
     # (the order is that of the code in the game; the pieces of a file are not kept together)
-    return [tuned(LEVELS), damage_part("damage", "12", "4", "DAMAGE_BACK"), damage_part("sweep_damage", "6", "8", "SWEEP_DAMAGE_BACK"),
+    return [tuned(LEVELS), damage_part("damage", "12", "4", "DAMAGE_BACK", source=True), damage_part("sweep_damage", "6", "8", "SWEEP_DAMAGE_BACK"),
             tuned(BAR), tuned(RYNO_PERK), tuned(ICONS), tuned(WALLOPER_VISIBOMB), tuned(TINT_QUADS), tuned(MAGNET),
             FX, GOLD_NAME, tuned(TAUNT)]
 

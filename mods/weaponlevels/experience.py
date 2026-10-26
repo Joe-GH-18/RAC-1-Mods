@@ -11,6 +11,7 @@ from ..game import *  # noqa: F401,F403
 
 DAMAGE_RING = 0xA14C00         # 64 entries of 0x40 bytes: +0x24 flags, +0x2c damage, +0x34 target; moby +0xa4 = its entry
 WRENCH_DAMAGE = 0x10000        # damage flag
+CLANK_CARRIER = 0x259          # the class Co-op Clank's body is created as: his kills are not the weapon's
 KILL_HOOK = 0xFD8E0            # lhz r7, 0xb4(r3) in 0xfd8d0, behind its saving of the return address
 KILL_HOOK_WORD = 0xA0E300B4
 # The Decoy Glove kills nothing itself, so it is given what dies while one of its decoys stands:
@@ -90,6 +91,13 @@ xp_kill:
     lwz 8, 0x34(9)
     cmpw 8, 31
     bne xp_held
+    lwz 8, 0x20(9)                  # Co-op Clank's damage (the source his body): not the weapon's either
+    cmpwi 8, 0
+    beq xp_flags
+    lhz 8, 0xa6(8)
+    cmpwi 8, {CLANK_CARRIER}
+    beq xp_decoy
+xp_flags:
     lwz 8, 0x24(9)
     andis. 8, 8, {WRENCH_HI}
     bne xp_decoy

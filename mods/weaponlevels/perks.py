@@ -80,6 +80,7 @@ DAMAGE = """
     std 10, -16(1)
     andis. 9, @FLAGS@, {WRENCH_HI}
     bne @NAME@_out
+@SOURCE@
     lis 9, {HERO_HA}
     addi 9, 9, {HERO_LO}
     lwz 10, 0x2080(9)               # not what Ratchet takes himself
@@ -112,8 +113,21 @@ DAMAGE = """
 """
 
 
-def damage_part(name, flags, entry, back):
-    return DAMAGE.replace("@NAME@", name).replace("@FLAGS@", flags).replace("@ENTRY@", entry).replace("@BACK@", back)
+# Damage from a moby of class CLANK_CARRIER is Co-op Clank's (mods/coop: his body is created as
+# backpack Clank, which deals none in the game): not the weapon's, so not boosted. DEAL_DAMAGE has
+# the source in r31 at DAMAGE_HOOK; 0x105ab4 (the sweeps' damage) is left as it was.
+SOURCE_TEST = """
+    cmpwi 31, 0
+    beq @NAME@_weapon
+    lhz 10, 0xa6(31)
+    cmpwi 10, {CLANK_CARRIER}
+    beq @NAME@_out
+@NAME@_weapon:"""
+
+
+def damage_part(name, flags, entry, back, source=False):
+    return (DAMAGE.replace("@SOURCE@", SOURCE_TEST if source else "").replace("@NAME@", name).replace("@FLAGS@", flags)
+            .replace("@ENTRY@", entry).replace("@BACK@", back))
 
 
 # ryno_fan: replaces bl ROCKET in the R.Y.N.O.'s update.

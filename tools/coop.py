@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """coop.py <command> ...: Player 2's virtual pad and the co-op mod's block in a running game.
 
-Needs the game started under tools/trace.py with Player 2's virtual pad
-(tools/ingame.py --restart --p2) and RPCS3's Player 2 bound to "Backport P2".
+Needs the game started under tools/trace.py. Player 2's input goes into the mod's block (its
+test input, C_TEST: no second pad needed, whatever RPCS3's Player 2 is bound to); with
+COOP_VPAD=1 it goes to Player 2's virtual pad instead (tools/ingame.py --restart --p2, RPCS3's
+Player 2 bound to "Backport P2"). A real pad bound as Player 2 cannot be driven: RPCS3 grabs it.
 
   block                where the mod's block is
   state                the block and Player 2's pad block, decoded
@@ -10,6 +12,9 @@ Needs the game started under tools/trace.py with Player 2's virtual pad
                        select start l3 r3 up down left right), held 0.15 s
   hold SECONDS BUTTON...  the same, held that long
   stick X Y SECONDS    Player 2's left stick (-1..1, y up) for that long, then centred
+  get NAME...          tuning values (T_*) or runtime words (C_*) of the block, by name
+  set NAME VALUE       write one (float or int, as the layout declares it)
+  off                  the test input off again (Player 2's pad alone)
 """
 import os
 import struct
@@ -20,7 +25,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..")
 sys.path.insert(0, HERE)
 
-from live import peek, read           # noqa: E402
+from live import peek, read, write    # noqa: E402
+
+sys.path.insert(0, ROOT)
+from mods.coop import layout as L     # noqa: E402
 
 FIFO = os.path.join(ROOT, "build", "vpad2.fifo")
 TAG = b"COOP-CLANK-BLOCK"
@@ -47,7 +55,27 @@ def block():
     sys.exit("no co-op block: is the mod built in?")
 
 
-class Pad:
+class TestPad:
+    """Player 2's input written into the block's test words (C_TEST on while it is used)."""
+    def __init__(self):
+        self.at, self.held = block(), 0
+        write(self.at + L.C_TEST, struct.pack(">i", 1))
+
+    def buttons(self, names, down):
+        for name in names:
+            bit = next(bit for bit, label in BITS.items() if label.lower() == name.lower())
+            self.held = self.held | bit if down else self.held & ~bit
+        write(self.at + L.C_TEST_HELD, struct.pack(">I", self.held))
+
+    def stick(self, x, y):
+        write(self.at + L.C_TEST_STICK, struct.pack(">2f", max(-1, min(1, x)), max(-1, min(1, y))))
+
+
+def Pad():
+    return VirtualPad() if os.environ.get("COOP_VPAD") else TestPad()
+
+
+class VirtualPad:
     def __init__(self):
         try:
             fd = os.open(FIFO, os.O_WRONLY | os.O_NONBLOCK)
@@ -100,6 +128,19 @@ def state():
         held, pressed = struct.unpack(">2I", pad[0xa0:0xa8])
         active = struct.unpack(">I", pad[0x9c:0xa0])[0]
         print(f"pad: active {active}, stick {lx:+.2f} {ly:+.2f}, held {held:#x} ({names(held)}), pressed {pressed:#x}")
+    run = read(at, L.RUNTIME_SIZE)
+    word = lambda off: struct.unpack_from(">i", run, off)[0]
+    flt = lambda off, n=1: struct.unpack_from(f">{n}f", run, off)
+    modes = {L.MODE_DOCKED: "docked", L.MODE_POP: "popping off", L.MODE_FLY: "flying", L.MODE_DOCKING: "docking"}
+    drivers = {L.DRIVER_NONE: "nobody", L.DRIVER_P2: "Player 2", L.DRIVER_AI: "AI"}
+    print(f"mode {modes.get(word(L.C_MODE), word(L.C_MODE))} ({word(L.C_TIMER)} frames), driver "
+          f"{drivers.get(word(L.C_DRIVER), word(L.C_DRIVER))}, energy {flt(L.C_ENERGY)[0]:.1f}, hover {flt(L.C_HOVER)[0]:.2f}")
+    print("place {:.2f} {:.2f} {:.2f}, velocity {:.2f} {:.2f} {:.2f}".format(*flt(L.C_POS, 3), *flt(L.C_VEL, 3)))
+    print(f"yaw {flt(L.C_YAW)[0]:+.2f} roll {flt(L.C_ROLL)[0]:+.2f} pitch {flt(L.C_PITCH)[0]:+.2f}, swell {flt(L.C_SWELL)[0]:.2f}")
+    print(f"mobys: body {word(L.C_BODY) & 0xffffffff:#x}, wings {word(L.C_WINGS) & 0xffffffff:#x}, jets "
+          f"{word(L.C_JET_L) & 0xffffffff:#x} {word(L.C_JET_R) & 0xffffffff:#x}, model {word(L.C_MODEL) & 0xffffffff:#x}")
+    print(f"target {word(L.C_TARGET) & 0xffffffff:#x}, zap {word(L.C_ZAP)}, punch {word(L.C_PUNCH)} (wait "
+          f"{word(L.C_PUNCH_WAIT)}), overcharge {word(L.C_OVER)} ({word(L.C_OVER_TARGETS)} targets), boost {word(L.C_BOOST)}")
 
 
 def names(bits):
@@ -118,6 +159,16 @@ def main():
         hold(0.15, rest)
     elif command == "hold":
         hold(float(rest[0]), rest[1:])
+    elif command == "off":
+        write(block() + L.C_TEST, struct.pack(">i", 0))
+    elif command in ("get", "set"):
+        at, kinds = block(), {name: kind for name, kind, _ in L.TUNING}
+        for name in (rest if command == "get" else rest[:1]):
+            fmt = ">i" if kinds.get(name, "f" if name.startswith("T_") else "i") == "i" else ">f"
+            if command == "set":
+                value = float(rest[1]) if fmt == ">f" else int(rest[1], 0)
+                write(at + getattr(L, name), struct.pack(fmt, value))
+            print(name, struct.unpack(fmt, read(at + getattr(L, name), 4))[0])
     elif command == "stick":
         pad = Pad()
         pad.stick(float(rest[0]), float(rest[1]))
