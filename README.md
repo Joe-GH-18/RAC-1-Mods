@@ -12,6 +12,7 @@ Ratchet & Clank 2.
 | Strafing | RC2's strafing, backwards walk and side flips, and RC2's quicker speeding up and slowing down. | Hold L2 or R2 |
 | Clank's thruster dash | Clank makes Ratchet's Thruster-Pack long jump: wings and jets out, lying flat, breaking crates, bouncing off walls. | As Clank: hold R1, push the stick, press X |
 | Weapon levels | Weapons collect experience from the enemies they kill and reach a second level once: the game's own gold version where there is one, three rockets a shot for the R.Y.N.O., twice the damage for the Visibomb Gun, Walloper and Drone Device. The Taunter collects what the enemies it lured are worth; at level 2 a lured enemy that reaches Ratchet stands stunned until it is hit or a few seconds pass. A bar in the weapon display shows the experience; a level-up fills the weapon up and comes with a message, a flash, a burst of gold and rising gold smoke from the weapon; level 2 weapons are gold in Ratchet's hand, have a gold icon and a "Gold" name, and draw bolts in. | Kill enemies with the weapon in hand |
+| Co-op Clank | Player 2 is Clank: he leaves Ratchet's back, flies with him, zaps, rams and ground-pounds. With nobody on the second pad, the Clank Zapper on the pause menu makes him fight on his own. | See [Co-op Clank](#co-op-clank) |
 
 Everything was made and tested on RPCS3 under Linux. It has not been tried on a console.
 
@@ -59,6 +60,36 @@ The patcher only accepts the one executable it was made for (it compares checksu
 wrong file, or one modified by something else, is refused instead of broken.
 
 **To undo it**, copy `EBOOT.BIN.bak` back over `EBOOT.BIN`.
+
+## Co-op Clank
+
+Bind a second controller as Player 2 in RPCS3 (Configuration > Pads) before starting the game.
+For online play, run the game on one PC and share it with Parsec or the like.
+
+| Player 2's pad | Clank |
+|---|---|
+| Start or Cross | Jump off Ratchet's back |
+| Left stick | Fly, relative to the camera |
+| Cross | Boost |
+| R2 / L2 | Fly higher / lower |
+| Circle (hold) | Zap: Tesla lightning from his antenna, on the nearest enemy ahead |
+| Square | Ram: a barrel-roll dash through the target |
+| Triangle | Ground pound: a ring of lightning around where he lands |
+| Select (hold) | Back onto Ratchet's back |
+
+- All three attacks draw on the energy bar under his badge; it refills over time and faster on
+  Ratchet's back. The ram and the pound hit harder and cost more than the zap.
+- His damage grows with the furthest planet unlocked on the ship's list: two ticks of the zap
+  kill the minor enemies of that part of the game, tougher ones take longer.
+- While he is off Ratchet's back, Ratchet has no pack: no Heli-Pack glide. The double jump stays.
+- The camera keeps both players in the picture while Player 2 plays.
+- With Golden Clank bought, L3 + R3 on Player 1's pad with Clank out makes Player 2 a small gold
+  Giant Clank, with Ratchet riding on his back.
+- **AI Clank:** the Clank Zapper, the fourth entry under Back Packs on the pause menu's Gadgets
+  page. With nobody on Player 2's pad he jumps off when enemies are near, fights, and docks
+  again after five quiet seconds. The choice is kept in the save file.
+- He stays on Ratchet's back during Clank's own sections, Giant Clank's sections and the game's
+  scenes.
 
 ## What is in here
 
@@ -109,6 +140,9 @@ game instruction, `build.py` and the patcher chain them.
 - Weapon levels: a kill counts for the weapon in Ratchet's hand at that moment, whatever
   caused it. The experience is kept in the save file in places the game does not use; a save
   made with the mod loads without it and the other way round.
+- Co-op Clank: AI Clank's choice is kept in a save-file place the game does not use, like the
+  weapon levels'. The damage table is the author's reading of each part of the game; bosses get
+  no special case, so a late-game Clank takes a lot off them.
 
 ## Licence
 

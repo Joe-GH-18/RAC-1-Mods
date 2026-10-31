@@ -15,6 +15,9 @@ Player 2 bound to "Backport P2"). A real pad bound as Player 2 cannot be driven:
   get NAME...          tuning values (T_*) or runtime words (C_*) of the block, by name
   set NAME VALUE       write one (float or int, as the layout declares it)
   off                  the test input off again (Player 2's pad alone)
+  sound N              play the sound N as the mod plays them (0..0xff Ratchet's definitions,
+                       class << 8 | definition for another model of the level, e.g. 0xb101)
+  power [LEVEL VALUE]  Clank's damage factor per planet (layout.LEVEL_POWER), or set one
 """
 import os
 import struct
@@ -34,6 +37,7 @@ FIFO = os.path.join(ROOT, "build", "vpad2.fifo")
 TAG = b"COOP-CLANK-BLOCK"
 RW, RW_SIZE = 0x1630000, 0x10000      # mods/game.py SEGMENTS["rw"]
 STATE = 0x1606320
+PLANET = 0x969C70                     # mods/game.py: the level loaded
 COOP_OUT, COOP_P2, COOP_PILOT, COOP_PAD = 0x340, 0x344, 0x348, 0x34C
 KEYS = {"cross": 0x130, "circle": 0x131, "square": 0x133, "triangle": 0x134, "l1": 0x136, "r1": 0x137,
         "l2": 0x138, "r2": 0x139, "select": 0x13A, "start": 0x13B, "l3": 0x13D, "r3": 0x13E}
@@ -140,7 +144,7 @@ def state():
     print(f"mobys: body {word(L.C_BODY) & 0xffffffff:#x}, wings {word(L.C_WINGS) & 0xffffffff:#x}, jets "
           f"{word(L.C_JET_L) & 0xffffffff:#x} {word(L.C_JET_R) & 0xffffffff:#x}, model {word(L.C_MODEL) & 0xffffffff:#x}")
     print(f"target {word(L.C_TARGET) & 0xffffffff:#x}, zap {word(L.C_ZAP)}, punch {word(L.C_PUNCH)} (wait "
-          f"{word(L.C_PUNCH_WAIT)}), chain targets {word(L.C_OVER_TARGETS)}, boost {word(L.C_BOOST)}")
+          f"{word(L.C_PUNCH_WAIT)}), boost {word(L.C_BOOST)}")
     if word(L.C_MODE) == L.MODE_MINI:
         print(f"mini: moby {word(L.C_MINI) & 0xffffffff:#x}, place " + "{:.2f} {:.2f} {:.2f}".format(*flt(L.C_MINI_POS, 3))
               + ", velocity {:.2f} {:.2f} {:.2f}".format(*flt(L.C_MINI_VEL, 3))
@@ -164,6 +168,15 @@ def main():
         hold(0.15, rest)
     elif command == "hold":
         hold(float(rest[0]), rest[1:])
+    elif command == "sound":
+        write(block() + L.C_SOUND_TRY, struct.pack(">i", int(rest[0], 0) + 1))
+    elif command == "power":
+        at = block() + L.LEVEL_POWER
+        if rest:
+            write(at + 4 * int(rest[0]), struct.pack(">f", float(rest[1])))
+        planet = struct.unpack(">I", read(PLANET, 4))[0]
+        for k, value in enumerate(struct.unpack(f">{len(L.POWER_BY_LEVEL)}f", read(at, 4 * len(L.POWER_BY_LEVEL)))):
+            print(f"{k:2} {value:5.2f}{'  <- now' if k == planet else ''}")
     elif command == "off":
         write(block() + L.C_TEST, struct.pack(">i", 0))
     elif command in ("get", "set"):

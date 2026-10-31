@@ -56,32 +56,63 @@ def resampled(pcm, rate, volume):
     return out
 
 
-def main(path, folder):
-    src = open(path, "rb").read()
-    block_off, block_size, sample_off = struct.unpack_from(">3I", src, 8)
-    block = src[block_off:block_off + block_size]
-    count = struct.unpack_from(">I", block, 0x14)[0]
-    sounds, grains, grain_data = (struct.unpack_from(">I", block, at)[0] for at in (0x1C, 0x20, 0x34))
-    os.makedirs(folder, exist_ok=True)
-    written, decoded = 0, {}
-    for index in range(count):
-        sound = sounds + 12 * index
-        first = struct.unpack_from(">I", block, sound + 8)[0]
-        mix, ticks, skip, g, number = [], 0, 0, 0, block[sound + 4]
-        while g < number:
-            op, wait = struct.unpack_from(">II", block, grains + first + 8 * g)
-            kind, data = op >> 24, grain_data + (op & 0xFFFFFF)
+class Bank:
+    """A sound bank's sounds (src: the whole .bnk file)."""
+
+    def __init__(self, src):
+        self.src = src
+        block_off, block_size, self.sample_off = struct.unpack_from(">3I", src, 8)
+        self.block = block = src[block_off:block_off + block_size]
+        self.count = struct.unpack_from(">I", block, 0x14)[0]
+        self.sounds, self.grains, self.grain_data = (struct.unpack_from(">I", block, at)[0] for at in (0x1C, 0x20, 0x34))
+        self.decoded = {}
+
+    def grain_list(self, index):
+        """The sound's grains: (kind, data offset in the block, ticks to wait behind it)."""
+        sound = self.sounds + 12 * index
+        first = struct.unpack_from(">I", self.block, sound + 8)[0]
+        out = []
+        for g in range(self.block[sound + 4]):
+            op, wait = struct.unpack_from(">II", self.block, self.grains + first + 8 * g)
+            out.append((op >> 24, self.grain_data + (op & 0xFFFFFF), wait))
+        return out
+
+    def tone(self, data):
+        """A tone grain's sample bytes and its volume, note, fine."""
+        volume, note, fine = self.block[data + 1], struct.unpack_from("b", self.block, data + 2)[0], self.block[data + 3]
+        off, size = struct.unpack_from(">II", self.block, data + 0x10)
+        return self.src[self.sample_off + off:self.sample_off + off + size], volume, note, fine
+
+    def fingerprint(self, index):
+        """What makes the sound the same in another bank: its grains' kinds, waits and settings and
+        its samples' bytes, not where they lie in the bank."""
+        parts = []
+        for kind, data, wait in self.grain_list(index):
+            parts.append(struct.pack(">BI", kind, wait))
+            if kind == 1:
+                sample, volume, note, fine = self.tone(data)
+                parts += [self.block[data:data + 0x10], sample]
+            elif kind == 0x30:
+                parts.append(self.block[data:data + 1])
+        return b"".join(parts)
+
+    def render(self, index):
+        """The sound as the game would start it: 16-bit mono samples at RATE (empty when silent)."""
+        mix, ticks, skip, grains = [], 0, 0, self.grain_list(index)
+        g = 0
+        while g < len(grains):
+            kind, data, wait = grains[g]
             g += 1
             if kind == 0x30:                       # one of the next few: the first
-                skip = block[data] - 1
+                skip = self.block[data] - 1
                 continue
             if kind == 1:
-                volume, note, fine = block[data + 1], struct.unpack_from("b", block, data + 2)[0], block[data + 3]
-                off, size = struct.unpack_from(">II", block, data + 0x10)
+                sample, volume, note, fine = self.tone(data)
                 rate = 48000 * 2 ** ((60 - (-note + fine / 128)) / 12) if note < 0 else 44100 * 2 ** ((60 - (note + fine / 128)) / 12)
-                if (off, size) not in decoded:
-                    decoded[off, size] = decode(src[sample_off + off:sample_off + off + size])
-                tone = resampled(decoded[off, size], rate, volume / 127)
+                key = struct.unpack_from(">II", self.block, data + 0x10)
+                if key not in self.decoded:
+                    self.decoded[key] = decode(sample)
+                tone = resampled(self.decoded[key], rate, volume / 127)
                 start = ticks * RATE // 240
                 if start < SECONDS * RATE:
                     tone = tone[:SECONDS * RATE - start]
@@ -92,15 +123,29 @@ def main(path, folder):
                     g, skip = g + skip, 0
             ticks += wait
         if not mix:
-            continue
+            return b""
         peak = max(1.0, max(abs(v) for v in mix) / 32767)
-        with wave.open(os.path.join(folder, f"s{index:03d}.wav"), "wb") as out:
-            out.setnchannels(1)
-            out.setsampwidth(2)
-            out.setframerate(RATE)
-            out.writeframes(struct.pack(f"<{len(mix)}h", *(int(v / peak) for v in mix)))
-        written += 1
-    print(f"{written} sounds of {count} in {folder}")
+        return struct.pack(f"<{len(mix)}h", *(int(v / peak) for v in mix))
+
+
+def write_wav(path, pcm):
+    with wave.open(path, "wb") as out:
+        out.setnchannels(1)
+        out.setsampwidth(2)
+        out.setframerate(RATE)
+        out.writeframes(pcm)
+
+
+def main(path, folder):
+    bank = Bank(open(path, "rb").read())
+    os.makedirs(folder, exist_ok=True)
+    written = 0
+    for index in range(bank.count):
+        pcm = bank.render(index)
+        if pcm:
+            write_wav(os.path.join(folder, f"s{index:03d}.wav"), pcm)
+            written += 1
+    print(f"{written} sounds of {bank.count} in {folder}")
 
 
 if __name__ == "__main__":

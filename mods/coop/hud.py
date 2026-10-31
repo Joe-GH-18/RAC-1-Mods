@@ -8,9 +8,9 @@ where whatever was drawn never showed (a 600 x 400 magenta rectangle, 2026-10-26
 While Player 2 is in, a badge top left (T_HUD_X/Y): "P2 CLANK" in Clank's blue and his
 energy under it as a bar (T_BAR_*: its back, the energy in blue, gold when full, red-orange below
 the ram's cost); "P2 DOCKED" in grey on Ratchet's back, "P2 GIANT CLANK" in gold while Player 2
-walks the mini Giant Clank (mini.py). And the messages (coop_msg: C_MSG, the texts MESSAGES in
-layout.py), centred at T_MSG_X/Y for T_MSG_FRAMES, fading over the last T_MSG_FADE: Player 2
-joined, Clank docked, and each combo's name. Not drawn in the game's scenes (SCENE_FLAG).
+walks the mini Giant Clank (mini.py). Not drawn in the game's scenes (SCENE_FLAG). The messages
+in the middle (Player 2 joined, Clank docked, the combos' names) are gone (the user, 2026-10-29:
+"remove the text of the actions from the screen").
 
 Text: HUD_TEXT 0x70130(x, y, colour, string, -1) is the HUD's own (the ammunition count's, with a
 shadow drawn a unit down and right first); it ends the text at x, measured with the font's widths
@@ -45,6 +45,7 @@ coop_hud:                           # at HUD_HOOK (r30, r31 are the HUD's: kept)
     li 3, 1
 chd_hide:
     bl coop_hide
+    bl coop_cam                     # the camera between the players (camera.py)
     lwz 3, {C_MODE}(29)
     cmpwi 3, {MODE_DOCKED}
     beq chd_out
@@ -84,12 +85,6 @@ coop_hud_draw:
     ld 0, 0x10(1)
     mtlr 0
     lis 28, 0xa1                    # the displaced instruction
-    blr
-
-coop_msg:                           # (r3 a message, MSG_*; r29) it shows from now
-    stw 3, {C_MSG}(29)
-    lwz 9, {T_MSG_FRAMES}(29)
-    stw 9, {C_MSG_LEFT}(29)
     blr
 
 coop_text_width:                    # (r3 a string) -> r3 its width as HUD_TEXT measures it
@@ -182,7 +177,7 @@ coop_draw_hud:                      # (r29/r30) the badge and the message
     bne cdh_out
     lwz 9, {C_DRIVER}(29)
     cmpwi 9, {DRIVER_P2}
-    bne cdh_message
+    bne cdh_out
     li 28, {BADGE_DOCKED}           # the badge: its text and colour
     lwz 27, {T_HUD_GREY}(29)
     lwz 9, {C_MODE}(29)
@@ -234,7 +229,7 @@ cdh_badge:
     stfd 1, {C_TMP} + 0x10(29)
     lwz 28, {C_TMP} + 0x14(29)      # r28 = the filled width
     cmpwi 28, 0
-    ble cdh_message
+    ble cdh_out
     lwz 27, {T_HUD_BLUE}(29)
     lfs 1, {C_ENERGY}(29)
     lfs 2, {T_ENERGY_MAX}(29)
@@ -257,37 +252,6 @@ cdh_fill:
     add 6, 6, 4
     mr 7, 27
     bl coop_rect
-cdh_message:
-    lwz 9, {C_MSG_LEFT}(29)         # the message, fading at its end
-    cmpwi 9, 0
-    ble cdh_out
-    addi 9, 9, -1
-    stw 9, {C_MSG_LEFT}(29)
-    lwz 3, {C_MSG}(29)
-    cmpwi 3, 1
-    blt cdh_out
-    cmpwi 3, {BADGE_OUT} - 1
-    bgt cdh_out
-    lwz 27, {T_HUD_GOLD}(29)
-    lwz 10, {T_MSG_FADE}(29)
-    cmpw 9, 10
-    bge cdh_say
-    slwi 9, 9, 7                    # alpha 0x80 * left / fade
-    divw 9, 9, 10
-    clrlwi 27, 27, 8
-    slwi 9, 9, 24
-    or 27, 27, 9
-cdh_say:
-    lwz 6, {C_MSG}(29)
-    addi 6, 6, -1
-    mulli 6, 6, {TEXT_SIZE}
-    addi 6, 6, {TEXTS}
-    add 6, 6, 29
-    lwz 3, {T_MSG_X}(29)
-    lwz 4, {T_MSG_Y}(29)
-    mr 5, 27
-    li 7, 1
-    bl coop_text
 cdh_out:
     ld 27, 0x80(1)
     ld 28, 0x78(1)

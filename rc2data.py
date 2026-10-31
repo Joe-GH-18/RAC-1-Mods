@@ -178,6 +178,13 @@ def sound_bank(rc2, level, definitions):
     return bytes(out + samples)
 
 
+def level_sound_bank(rc1, level, indices):
+    """An RC1 level's sound bank cut down to the samples of these of its sounds (the co-op Clank's
+    picks that other levels lack: mods/coop/layout.OWN_BANKS)."""
+    defs = [struct.pack(">26xH4x", index) for index in indices]
+    return sound_bank(rc1, level, defs)
+
+
 def charge_sounds(rc2):
     """The charge's two sound definitions, followed by the bank with their samples."""
     level = rc2.read(f"level{SOUND_LEVEL}/engine.ps3")
@@ -700,10 +707,10 @@ EXTRACTS = dict(animation=animation, charge_sounds=charge_sounds, boots_model=bo
                 giant_part=giant_part, giant_ball_vertices=giant_ball_vertices, giant_ball_indices=giant_ball_indices,
                 giant_tube_vertices=giant_tube_vertices, giant_tube_indices=giant_tube_indices, clank_gold_eyes=clank_gold_eyes,
                 giant_sounds=giant_sounds, level_model=level_model, level_textures=level_textures,
-                level_pixels=level_pixels, level_animation=level_animation)
+                level_pixels=level_pixels, level_animation=level_animation, level_sound_bank=level_sound_bank)
 RC1_EXTRACTS = {"level_model", "level_textures", "level_pixels", "giant_model", "giant_textures", "giant_pixels", "giant_part", "giant_ball_vertices", "giant_ball_indices",
                 "giant_tube_vertices", "giant_tube_indices", "clank_gold_eyes",
-                "giant_sounds", "level_animation"}
+                "giant_sounds", "level_animation", "level_sound_bank"}
 
 
 def game(name):

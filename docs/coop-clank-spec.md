@@ -471,8 +471,8 @@ checkpoints need the user.
 | **4 Showpieces** | Overcharge; two pilots, one Giant Clank | overcharge hits 6 enemies in a clip; the tag-team works with P1 driving and P2 punching; **the user plays it with someone** |
 | **5 Combo + AI + menu** | Shock-Wrench combo; AI Clank; the "Clank Zapper" menu item and its save byte | AI clears an easy fight alone without getting lost; the menu item saves and loads |
 | **6 HUD, sounds, polish** | badge, bar, three messages, all sounds, the gold | screenshots on 4 levels; sounds heard by the user |
-| **7 Hardening** | 3.9 on all 19 levels (`tools/stage.py travel`) | per level: travel, join, fly 10 s, zap, dock; plus death, respawn, level change and pause with Clank out; no crash |
-| **8 Release** | `build.py --export` → `patches/coop-npea00385.bbpatch`; README row and section "Co-op" (controls, RPCS3 Player 2, Parsec for online); `patch.py --list` shows it | the user patches a clean EBOOT with `patch.py` and plays |
+| **7 Hardening** (done 2026-10-30) | 3.9 on all 19 levels (`tools/stage.py travel`) | per level: travel, join, fly 10 s, zap, dock; plus death, respawn, level change and pause with Clank out; no crash |
+| **8 Release** (patch and README done 2026-10-30) | `build.py --export` → `patches/coop-npea00385.bbpatch`; README row and section "Co-op" (controls, RPCS3 Player 2, Parsec for online); `patch.py --list` shows it | the user patches a clean EBOOT with `patch.py` and plays |
 
 Pack gating (3.7) and the bolt magnet go in when the user wants them, after phase 4.
 

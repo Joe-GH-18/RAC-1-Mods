@@ -15,7 +15,10 @@ set every frame (flight.py); its light (+0x38) is Ratchet's moby's, at the HUD h
 
 Hiding (seen live 2026-10-26): a moby's draw distance +0x32 = 0 leaves it out of the picture,
 and the game does not set it again for backpack Clank (hero +0x1184) or the pack (+0x1180), so
-coop_hide keeps theirs (C_KEPT_*) and puts them back on docking.
+coop_hide keeps theirs (C_KEPT_*) and puts them back on docking. The red light of his antenna
+still showed on Ratchet that way (the user), so the game's own hide bit (+0x34 0x1) is set too,
+and their scale 0; it still showed: the light is a moby of its own (HERO_CLANK_LIGHT, class 0x4b4
+at scale 0.001), whose draw distance is set to 0 as well.
 
 The wings are the Thruster-Pack's device (class 0x260, animation 1 = wings out), placed from his
 moby's matrix at T_WINGS_* (forward, left, up in his axes) at the HUD hook, as Clank's dash in
@@ -37,10 +40,14 @@ MOBY_SET_ANIM = 0xFDDC0                    # (r3 moby, r4 animation, r5 = 0, r6 
 MOBY_DELETE = 0xEFB38                      # (r3 moby)
 MANIP_REMOVE = 0xF0F1C                     # (r3 moby, r4 joint manipulator)
 JOINT_POSITION = 0xF1114                   # (r3 moby, r4 joint of the model's list +0x1c, r5 vec4 out)
+BANK_LOAD_FROM_MEM = 0x60AE8C               # (r3 bank image, 16-aligned, writable) -> handle, 0 on failure
 MOBY_MOVED = 0xF31A8                       # (r3 moby): bounds from its place
 DRAW_DISTANCE = 0x2000                     # moby +0x32 (u16); 0 = never drawn
 SKIP_UPDATE = 0x2                          # moby +0x34: left out of the moby loop
 HERO_KIND, HERO_CLANK_MOBY, HERO_PACK_MOBY = 0x20A4, 0x1184, 0x1180
+HERO_CLANK_LIGHT = 0x118C        # backpack Clank's antenna light (class 0x4b4, scale 0.001; found 2026-10-27 among the mobys at his place)
+HIDE_BIT = 0x1                  # moby +0x34: not drawn at all (the game's own hide, 0x7d5c0)
+HERO_PACK_HIDDEN = 0x22D8       # not 0: the game hides the backpack mobys itself (+0x34 | 0x41 at their spawn, 0x921c0)
 THRUSTER_CLASS, WINGS_ANIM, WINGS_DRAW = 0x260, 1, 0x20
 JET_SPAWN = 0x2AA928                       # (r3 side) -> moby
 JET_EMIT = 0x2A9F18                        # (r3 jet)
@@ -49,8 +56,38 @@ DRAW_REGISTER = 0x6D7E0                    # (r3 function descriptor, r4 moby)
 JET_OFF_STATE = 5
 JET_VALUES = (0.0125, 0.2, 0.05, 0.025)    # variables +0x20..+0x2c of a lit jet
 PUFF = 0x123390                            # the game's puff of glow (see mods/weaponlevels/fx.py)
+# GRID_PLACE 0xf25f4 takes a moby's id out of a cell with no end test: an id not in the cell runs on
+# through memory and writes where it finds it (the freeze on Drek's Fleet, NOTES.md). coop_grid_search
+# stops at the cell's end and leaves that cell alone, counting it in C_GRID_MISS.
+GRID_SEARCH_HOOK, GRID_SEARCH_HOOK_WORD = 0xF2764, 0x7C863814   # addc r4, r6, r7: the end of the cell's ids
+GRID_FOUND, GRID_NEXT_CELL = 0xF278C, 0xF27E0
 
 CODE = r"""
+coop_grid_search:                   # (jumped to) r6 the cell's ids, r7 their bytes, r31 the moby
+    addc 4, 6, 7
+    clrldi 4, 4, 32
+    lwz 8, 0xac(31)
+    mr 5, 6
+cgs_next:
+    cmplw 5, 4
+    bge cgs_none
+    lhz 7, 0(5)
+    extsh 7, 7
+    cmpw 7, 8
+    beq cgs_found
+    addi 5, 5, 2
+    b cgs_next
+cgs_found:
+    addi 6, 5, 2
+    b {GRID_FOUND}
+cgs_none:
+    lis 9, {COOP_HA}
+    addi 9, 9, {COOP_LO}
+    lwz 8, {C_GRID_MISS}(9)
+    addi 8, 8, 1
+    stw 8, {C_GRID_MISS}(9)
+    b {GRID_NEXT_CELL}
+
 coop_install:                       # (r29) Clank's model, once per boot
     lwz 3, {C_MODEL}(29)
     cmpwi 3, 0
@@ -97,6 +134,14 @@ coop_install:                       # (r29) Clank's model, once per boot
     lwz 3, {GCM_PTR_LO}(3)
     lwz 3, 0x4ac(3)
     subf 3, 3, 28
+    lis 4, {ZAPPER_PIXELS_HI}       # the Clank Zapper's menu icons follow his pixels (menu.py)
+    ori 4, 4, {ZAPPER_PIXELS_LO}
+    add 4, 3, 4
+    lis 5, {ZAPPER_ICON_ENTRIES_HA}
+    addi 5, 5, {ZAPPER_ICON_ENTRIES_LO}
+    stw 4, 0(5)
+    addi 4, 4, 0x1000
+    stw 4, 0x24(5)
     li 4, {ENTRY_COUNT}
     mtctr 4
     mr 4, 27
@@ -291,8 +336,32 @@ coop_anim:                          # (r3 = an animation of his; r29): set when 
     b {MOBY_SET_ANIM}
 
 coop_hide:                          # (r3 = 1 hide backpack Clank and the pack, 0 show them again; r29/r30)
+    lwz 9, {HERO_CLANK_LIGHT}(30)   # his antenna's light (class 0x4b4, at scale 0.001 a red dot all the same):
+    cmpwi 9, 0                      # its draw distance 0 while hidden, kept in C_KEPT_LIGHT
+    beq ch_lit
+    lwz 10, {C_KEPT_LIGHT_MOBY}(29)
+    cmpwi 3, 0
+    beq ch_light_on
+    cmpw 10, 9
+    beq ch_light_off
+    stw 9, {C_KEPT_LIGHT_MOBY}(29)
+    lhz 10, 0x32(9)
+    stw 10, {C_KEPT_LIGHT}(29)
+ch_light_off:
+    li 10, 0
+    sth 10, 0x32(9)
+    b ch_lit
+ch_light_on:
+    cmpw 10, 9
+    bne ch_lit
+    lwz 10, {C_KEPT_LIGHT}(29)
+    sth 10, 0x32(9)
+    li 10, 0
+    stw 10, {C_KEPT_LIGHT_MOBY}(29)
+ch_lit:
     lwz 9, {HERO_CLANK_MOBY}(30)
     addi 10, 29, {C_KEPT_CLANK}
+    addi 12, 29, {C_KEPT_SCALES}
     lwz 8, {C_HIDDEN}(29)
     stw 3, {C_HIDDEN}(29)
     li 7, 2
@@ -301,7 +370,17 @@ ch_one:
     beq ch_next
     cmpwi 3, 0
     beq ch_show
-    lhz 11, 0x32(9)                 # hide: keep its draw distance (a new moby brings its own)
+    lhz 11, 0x34(9)                 # hide: the game's own hide bit too (the antenna's red light is
+    ori 11, 11, {HIDE_BIT}          # drawn without regard to the draw distance)
+    sth 11, 0x34(9)
+    lfs 0, 0x2c(9)                  # and scale 0 (the light still showed with the bit): its scale kept
+    lfs 1, {T_ZERO}(29)
+    fcmpu 0, 0, 1
+    beq ch_scaled
+    stfs 0, 0(12)
+    stfs 1, 0x2c(9)
+ch_scaled:
+    lhz 11, 0x32(9)                 # and keep its draw distance (a new moby brings its own)
     cmpwi 11, 0
     beq ch_next
     sth 11, 0(10)
@@ -311,6 +390,20 @@ ch_one:
 ch_show:
     cmpwi 8, 0                      # only once, after hiding
     beq ch_next
+    lwz 11, 0(12)                   # its scale back
+    cmpwi 11, 0
+    beq ch_unscaled
+    stw 11, 0x2c(9)
+    li 11, 0
+    stw 11, 0(12)
+ch_unscaled:
+    lhz 11, {HERO_PACK_HIDDEN}(30)  # the hide bit off, unless the game hides the pack itself
+    cmpwi 11, 0
+    bne ch_shown
+    lhz 11, 0x34(9)
+    rlwinm 11, 11, 0, 0, 30
+    sth 11, 0x34(9)
+ch_shown:
     lhz 11, 0(10)
     cmpwi 11, 0
     bne ch_put
@@ -320,6 +413,7 @@ ch_put:
 ch_next:
     lwz 9, {HERO_PACK_MOBY}(30)
     addi 10, 29, {C_KEPT_PACK}
+    addi 12, 12, 4
     addic. 7, 7, -1
     bne ch_one
     blr
@@ -601,9 +695,35 @@ coop_forget:                        # (r29) a new level: the mobys went with the
     stw 9, {C_POUND}(29)
     stw 9, {C_BOOST}(29)
     stw 9, {C_SWELL}(29)
-    stw 9, {C_OVER_TARGETS}(29)
     li 9, -1
     stw 9, {C_ANIM}(29)
+    lis 10, {PREVIEW_WIDGET_HA}     # the menu's preview Clank went too (a game loaded from the menu): the
+    addi 10, 10, {PREVIEW_WIDGET_LO}  # preview's own bytes back, no moby touched
+    lwz 9, {C_PREV_KEPT}(29)
+    cmpwi 9, 0
+    beq cfg_prev
+    li 12, 0
+cfg_flag:
+    addi 11, 12, {C_PREV_FLAGS}
+    lbzx 9, 29, 11
+    addi 11, 12, 0xa4
+    stbx 9, 10, 11
+    addi 12, 12, 1
+    cmpwi 12, {PREVIEW_SLOTS}
+    blt cfg_flag
+cfg_prev:
+    lwz 9, 0x48(10)                 # (ours left in the item's slot)
+    lwz 11, {C_PREV}(29)
+    cmpw 9, 11
+    bne cfg_out
+    li 9, 0
+    stw 9, 0x48(10)
+cfg_out:
+    li 9, 0
+    stw 9, {C_PREV}(29)
+    stw 9, {C_PREV_ITEM}(29)
+    stw 9, {C_PREV_KEPT}(29)
+    stw 9, {C_PREV_BOLTS}(29)
     blr
 
 coop_puffs:                         # (r3 = a set of puffs in the block, r4 = where: 3 floats) the game's puffs of glow
@@ -656,12 +776,131 @@ cp_out:
     mtlr 0
     blr
 
-coop_sound:                         # (r3 = one of Ratchet's sound definitions, < 0 none; r30): it plays at him
-    cmpwi 3, 0
-    bltlr
-    lwz 5, 0x2080(30)
-    cmpwi 5, 0
+coop_sound:                         # (r3 = a sound, < 0 none; r29, r30): it plays at Ratchet. Below 0x100 one of
+    cmpwi 3, 0                      # Ratchet's sound definitions, below SOUND_OURS class << 8 | a definition of that
+    bltlr                           # class's model in this level (none if it is not loaded or has fewer), from
+    lwz 5, 0x2080(30)               # SOUND_OURS the picked sound of slot k (sounds.json), from SOUND_BANK the
+    cmpwi 5, 0                      # level bank's sound n
     beqlr
+    lwz 6, 0x24(5)                  # r6 = the model: Ratchet's
+    lis 7, 1                        # (SOUND_OURS)
+    cmpw 3, 7
+    bge cs_ours
+    cmplwi 3, 0x100
+    blt cs_model
+    srwi 6, 3, 8                    # or the class's
+    clrlwi 3, 3, 24
+    cmplwi 6, 0x800
+    bgelr
+    lis 7, {CLASS_SLOT_MAP_HA}
+    addi 7, 7, {CLASS_SLOT_MAP_LO}
+    lbzx 6, 7, 6
+    cmplwi 6, {MODEL_SLOTS}
+    bgelr
+    slwi 6, 6, 2
+    lis 7, {MODEL_TABLE_HA}
+    addi 7, 7, {MODEL_TABLE_LO}
+    lwzx 6, 7, 6
+cs_model:
+    cmpwi 6, 0
+    beqlr
+    lbz 7, 0xd(6)                   # (as PLAY_MODEL_SOUND: the definitions at +0x28, +0xd of them)
+    cmpw 3, 7
+    bgelr
+    lwz 7, 0x28(6)
+    cmpwi 7, 0
+    beqlr
+    slwi 3, 3, 5
+    add 3, 3, 7
     li 4, 0
-    b {PLAY_MODEL_SOUND}
+    li 6, 0
+    li 7, 0x400
+    b {PLAY_SOUND_DEF}
+cs_ours:                            # a definition of ours for a sound of the level's bank (the bank Ratchet's
+    lwz 6, 0x28(6)                  # definitions play from), as one of his one-shots
+    cmpwi 6, 0
+    beqlr
+    lwz 8, 0x1c(6)                  # r8 = the level bank's handle, r10 = the volume
+    lwz 10, {T_SOUND_VOLUME}(29)
+    subf 9, 7, 3                    # r9 = the bank's sound
+    lis 7, 2                        # (SOUND_BANK)
+    cmpw 3, 7
+    bge cs_bank
+    cmplwi 9, {SOUND_SLOTS}         # a slot: its volume and its sound on this level
+    bgelr
+    slwi 11, 9, 2
+    addi 12, 11, {SOUND_VOLUMES}
+    lwzx 10, 29, 12
+    addi 12, 11, {SOUND_SLOT_BANK}  # from a bank of our own (one the level lacks): its handle
+    lwzx 12, 29, 12
+    cmpwi 12, 0
+    beq cs_level
+    slwi 12, 12, 2
+    addi 12, 12, {C_OWN_BANKS} - 4
+    lwzx 8, 29, 12
+    cmpwi 8, 0
+    blelr
+cs_level:
+    lis 11, {PLANET_HA}
+    lwz 11, {PLANET_LO}(11)
+    cmplwi 11, {LEVEL_COUNT}
+    bgelr
+    mulli 9, 9, {LEVEL_COUNT}
+    add 9, 9, 11
+    slwi 9, 9, 1
+    addi 9, 9, {SOUND_TABLE}
+    lhzx 9, 29, 9
+    cmplwi 9, {SOUND_NONE}
+    beqlr
+    b cs_def
+cs_bank:
+    subf 9, 7, 3
+cs_def:
+    lwz 11, {C_SOUND_NEXT}(29)      # r3 = the next of our definitions
+    addi 12, 11, 1
+    stw 12, {C_SOUND_NEXT}(29)
+    andi. 11, 11, {SOUND_DEFS} - 1
+    slwi 11, 11, 5
+    addi 11, 11, {C_SOUND_DEFS}
+    add 3, 29, 11
+    li 11, 0
+    stw 11, 0(3)
+    stw 11, 8(3)
+    stw 11, 0x10(3)
+    stw 11, 0x14(3)
+    lis 11, 0x4280                  # (range 64)
+    stw 11, 4(3)
+    stw 10, 0xc(3)
+    li 11, 2
+    sth 11, 0x18(3)
+    sth 9, 0x1a(3)
+    stw 8, 0x1c(3)
+    li 4, 0
+    li 6, 0
+    li 7, 0x400
+    b {PLAY_SOUND_DEF}
+
+coop_banks:                         # (r29) OWN_BANKS loaded, once (the loader relocates a bank in place)
+    lwz 9, {C_BANKS_IN}(29)
+    cmpwi 9, 0
+    bnelr
+    li 9, 1
+    stw 9, {C_BANKS_IN}(29)
+    mflr 0
+    std 0, 0x10(1)
+    stdu 1, -0x70(1)
+{OWN_BANKS_LOAD}
+    addi 1, 1, 0x70
+    ld 0, 0x10(1)
+    mtlr 0
+    blr
+
+coop_sound_try:                     # (r29, r30) C_SOUND_TRY, a sound plus 1 (tools/coop.py sound), played once
+    lwz 3, {C_SOUND_TRY}(29)
+    cmpwi 3, 0
+    beqlr
+    li 9, 0
+    stw 9, {C_SOUND_TRY}(29)
+    addi 3, 3, -1
+    b coop_sound
 """

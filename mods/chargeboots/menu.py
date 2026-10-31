@@ -96,8 +96,8 @@ grid_entry:                         # replaces lhz r3, 4(r30)
     ori 12, 12, {CHARGE_ENTRY_LO}
     cmplw 30, 12
     beq grid_entry_boots
-    lhz 3, 4(30)                    # the displaced instruction
-    blr
+grid_entry_next:                    # another entry (the Clank Zapper of mods/coop shares the hook)
+    {CHAIN}
 grid_entry_boots:                   # the game's two calls for an icon, with the Charge Boots' texture
     stdu 1, -0x90(1)
     std 31, 0x88(1)
@@ -218,8 +218,8 @@ grid_press:                         # replaces lhz r3, 6(r30)
     ori 12, 12, {CHARGE_ENTRY_LO}
     cmplw 30, 12
     beq grid_press_boots
-    lhz 3, 6(30)                    # the displaced instruction
-    blr
+grid_press_next:
+    {CHAIN}
 grid_press_boots:
     li 3, 0                         # the game's own sound and input delay for a confirmed entry
     li 4, 0x11
@@ -247,11 +247,11 @@ menu_text:                          # replaces bl TEXT_LOOKUP
     addi 11, 11, {ITEM_TABLE_LO}
     subf 12, 11, 12
     cmplwi 12, 0x4c                 # a widget that reads its text ids out of the item table
-    bge menu_text_plain
+    bge menu_text_next
     mflr 0
     bl cursor_on_boots
     mtlr 0
-    bne menu_text_plain
+    bne menu_text_next
     lwz 12, 0x34(30)
     lis 11, {ITEM_TABLE_HA}
     addi 11, 11, {ITEM_TABLE_LO}
@@ -262,8 +262,8 @@ menu_text:                          # replaces bl TEXT_LOOKUP
     lis 3, {CHARGE_HELP_HA}
     addi 3, 3, {CHARGE_HELP_LO}
     blr
-menu_text_plain:
-    b {TEXT_LOOKUP}
+menu_text_next:
+    {CHAIN}
 
 preview_class:                      # replaces lwz r24, 0x10(r28); cr1 is in use there
     lwz 24, 0x10(28)                # the displaced instruction

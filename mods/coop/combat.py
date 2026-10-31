@@ -1,4 +1,4 @@
-"""Clank's fighting: the zap (Circle), the ram (Square), the ground pound (Triangle) and the combos.
+"""Clank's fighting: the zap (Circle), the ram (Square) and the ground pound (Triangle).
 
 Targets are found as the Tesla Claw finds its own (its stream 0x2b4818): the moby list at
 MOBY_LIST (moby pointers, ended by 0), a moby whose model has +0x46 = 5, whose state byte is
@@ -7,8 +7,9 @@ The zap locks the nearest within T_ZAP_RANGE of him inside a cone of T_ZAP_CONE 
 about his aim (the stick's way, or his heading), and keeps it while it is within T_ZAP_KEEP.
 
 Damage goes through DEAL_DAMAGE with his body as the source (so the weapon levels leave it
-alone: mods/weaponlevels, CLANK_CARRIER). The zap deals the Tesla Claw's damage (2.0 at its
-first level, from 0x2b47a0, with its flags 0x210000) times T_ZAP_DAMAGE every T_ZAP_TICK frames.
+alone: mods/weaponlevels, CLANK_CARRIER), times T_POWER and the LEVEL_POWER of the furthest planet
+unlocked (layout.py). The zap deals the Tesla Claw's damage (2.0 at its first level, from 0x2b47a0,
+with its flags 0x210000) times T_ZAP_DAMAGE every T_ZAP_TICK frames.
 
 The lightning is the Tesla Claw's own bolt (TESLA_RIBBON 0x2b7d30, drawn by coop_bolt_draw, a
 draw callback of the mod's on his body): from the tip of his antenna (his model's joint 7) to
@@ -25,37 +26,15 @@ small blue shockwave"): up and round while he swells (T_POUND_RISE frames), the 
 ground, then a ring of lightning out to T_POUND_RADIUS (FX_RING) hitting every enemy in it
 (coop_area_hit) and the crates, the camera shaking, and T_POUND_HOLD frames on the ground.
 
-The combos (team moves of both players; the user: "make them a bit more interactive"):
-  Tesla Tether    the zap with no enemy in its aim but Ratchet (C_RATCHET_AT, his chest): a
-                  beam between the two that hurts every enemy within T_FENCE_WIDTH of it on the
-                  zap's ticks (coop_fence): both players sweep it through a group.
-  Charged Ratchet the tether held T_CHARGE_FRAMES: Ratchet charged for T_RATCHET_CHARGE frames,
-                  a cage of lightning about him. Charged Wrench: each wrench hit of his is dealt
-                  again (T_RCHARGE_BONUS) and arcs on to the nearest other enemy within
-                  T_ARC_REACH. Lightning Landing: landing after T_LAND_AIR frames in the air, a
-                  ring of T_LAND_RADIUS bursts from his feet.
-  Shock-Wrench    a hit of Ratchet's wrench and a tick of the zap on the same enemy within
-                  T_COMBO_WINDOW frames, either first: it is charged for T_COMBO_TIME frames
-                  (zap ticks and wrench hits on it T_COMBO_FACTOR times), a big star and a cage
-                  of lightning winding about it meanwhile. The damage ring (DAMAGE_RING, its
-                  write index RING_INDEX) is read every frame for the wrench's hits; the marks
-                  are 16 entries {moby, frame of the wrench, frame of the zap, frame it ends}.
-  Chain Reaction  a charged enemy that dies (coop_combo_watch): lightning jumps from it to up to
-                  T_CHAIN_TARGETS more (the first within T_CHAIN_FIRST, each next within
-                  T_CHAIN_LINK of the last), each hit with the zap's damage times T_CHAIN_DAMAGE.
-  Lightning Ram   the ram into a charged enemy: T_OVERLOAD times the ram's damage, a ring, a
-                  big star, and its Chain Reaction at once.
-  Thunder Slam    the ground pound within T_THUNDER_NEAR of Ratchet while he is in the air: its
-                  ring T_THUNDER_SCALE wider and twice the damage, a second, slower ring and a
-                  big star.
+The combos (team moves) were dropped on 2026-10-29 (the user: "they are not really good and
+confuse").
 """
 from ..game import *  # noqa: F401,F403
 
 MOBY_LIST = 0xA49344           # moby pointers, ended by 0 (the Tesla Claw's and the Taunter's)
 AI_RECORD = 0xFCCCC            # (r3 moby) -> its AI record, 0 = none
 TARGET_KIND = 5                # model +0x46 of what the Tesla Claw takes
-DAMAGE_RING, RING_INDEX = 0xA14C00, 0xA10954
-WRENCH_FLAG_HI = 0x1           # 0x10000 >> 16
+UNLOCKED_PLANETS, UNLOCKED_COUNT = 0x96C18C, 20   # the ship's list of planets, in the order they came, saved (ints, 0 = free)
 BUTTON_ZAP, BUTTON_PUNCH, BUTTON_POUND = 0x20, 0x80, 0x10   # Circle zaps, Square rams, Triangle pounds (the user's, 2026-10-26)
 SHAKE_CHANNEL = 0x160          # CAMERA_STATE: +0 strength, +8 frames left
 TESLA_RIBBON = 0x2B7D30        # (r3 points vec4, r4/r5 alphas of 0x7b7820/0x7b7824, r9 count; f1..f3): the Tesla Claw's bolt, in a draw callback
@@ -569,124 +548,48 @@ coop_shake:                         # (f1 = strength, r3 = frames) the camera's 
     stw 3, {SHAKE_CHANNEL} + 8(9)
     blr
 
-coop_mark:                          # (r3 = a moby; r29) -> r3 = its combo mark (found, or a new one)
-    addi 9, 29, {C_COMBOS}
-    li 10, {COMBO_COUNT}
-    mtctr 10
-cmk_find:
-    lwz 10, 0(9)
-    cmpw 10, 3
-    beq cmk_found
-    addi 9, 9, 0x10
-    bdnz cmk_find
-    lwz 10, {C_COMBO_NEXT}(29)
-    addi 11, 10, 1
-    stw 11, {C_COMBO_NEXT}(29)
-    andi. 10, 10, {COMBO_COUNT} - 1
-    slwi 10, 10, 4
-    addi 9, 29, {C_COMBOS}
-    add 9, 9, 10
-    stw 3, 0(9)
-    lis 10, -0x10                   # long ago
-    stw 10, 4(9)
-    stw 10, 8(9)
-    li 10, 0
-    stw 10, 0xc(9)
-cmk_found:
-    mr 3, 9
-    blr
-
-coop_combo_go:                      # (r3 = a mark; r29/r30) its double damage starts, unless it runs
-    mflr 0
-    std 0, 0x10(1)
-    stdu 1, -0x70(1)
-    lis 9, {FRAME_COUNTER_HA}
-    lwz 9, {FRAME_COUNTER_LO}(9)
-    lwz 10, 0xc(3)
-    cmpw 10, 9
-    bgt ccg_out
-    lwz 10, {T_COMBO_TIME}(29)
-    add 10, 9, 10
-    stw 10, 0xc(3)
-    std 3, 0x60(1)                  # the Shock-Wrench: a big star on it, a cage about it while charged
-    lwz 3, 0(3)
-    addi 4, 29, {C_FIST}
-    bl coop_aimed
-    addi 3, 29, {C_FIST}
-    lwz 4, {T_COMBO_BURST}(29)
-    lwz 5, {T_RAM_BURST_FRAMES}(29)
-    lfs 1, {T_COMBO_BURST_R}(29)
-    bl coop_burst
-    ld 3, 0x60(1)
-    lwz 6, 0(3)
-    li 3, {FX_CAGE}
-    lwz 4, {T_COMBO_TIME}(29)
-    li 5, 0
-    li 7, 0
-    li 8, 0
-    lfs 1, {T_ZERO}(29)
-    bl coop_fx_add
-    lfs 1, {T_COMBO_SHAKE}(29)
-    li 3, 8
-    bl coop_shake
-    lwz 3, {T_SOUND_COMBO}(29)
-    bl coop_sound
-    li 3, {MSG_SHOCK}
-    bl coop_msg
-ccg_out:
-    addi 1, 1, 0x70
-    ld 0, 0x10(1)
-    mtlr 0
-    blr
-
-coop_hit:                           # (r3 = an enemy, f1 = damage, r4 = flags, r5 = 1 a zap tick (the combo); r29/r30)
+coop_hit:                           # (r3 = an enemy, f1 = damage, r4 = flags; r29/r30)
     mflr 0
     std 0, 0x10(1)
     stdu 1, -0x90(1)
     std 28, 0x70(1)
     std 27, 0x78(1)
-    std 26, 0x80(1)
     stfd 31, 0x88(1)
     mr 28, 3
     mr 27, 4
-    mr 26, 5
     fmr 31, 1
     bl coop_enemy
     cmpwi 3, 0
     beq chi_out
-    lwz 9, {C_DRIVER}(29)           # AI Clank holds back
+    lfs 0, {T_POWER}(29)            # stronger with the furthest planet unlocked (LEVEL_POWER)
+    fmuls 31, 31, 0
+    lis 9, {PLANET_HA}
+    lwz 9, {PLANET_LO}(9)
+    lis 10, {UNLOCKED_PLANETS_HA}
+    addi 10, 10, {UNLOCKED_PLANETS_LO} - 4
+    li 11, {UNLOCKED_COUNT}
+    mtctr 11
+chi_unlocked:
+    lwzu 11, 4(10)
+    cmplwi 11, {LEVEL_COUNT}
+    bge chi_further
+    cmplw 11, 9
+    ble chi_further
+    mr 9, 11
+chi_further:
+    bdnz chi_unlocked
+    cmplwi 9, {LEVEL_COUNT}
+    bge chi_ai
+    slwi 9, 9, 2
+    addi 9, 9, {LEVEL_POWER}
+    lfsx 0, 29, 9
+    fmuls 31, 31, 0
+chi_ai:
+    lwz 9, {C_DRIVER}(29)           # AI Clank's share
     cmpwi 9, {DRIVER_AI}
-    bne chi_combo
+    bne chi_deal
     lfs 0, {T_AI_DAMAGE}(29)
     fmuls 31, 31, 0
-chi_combo:
-    mr 3, 28
-    bl coop_mark
-    cmpwi 26, 0
-    beq chi_double
-    lis 9, {FRAME_COUNTER_HA}
-    lwz 9, {FRAME_COUNTER_LO}(9)
-    stw 9, 8(3)                     # the zap's frame: with a wrench hit before it, the combo
-    lwz 10, 4(3)
-    subf 10, 10, 9
-    cmplwi 10, 0
-    blt chi_double
-    lwz 11, {T_COMBO_WINDOW}(29)
-    cmplw 10, 11
-    bgt chi_double
-    std 3, 0x60(1)
-    bl coop_combo_go
-    ld 3, 0x60(1)
-chi_double:
-    lis 9, {FRAME_COUNTER_HA}
-    lwz 9, {FRAME_COUNTER_LO}(9)
-    lwz 10, 0xc(3)
-    cmpw 10, 9
-    ble chi_deal
-    lfs 0, {T_COMBO_FACTOR}(29)
-    fmuls 31, 31, 0
-    mr 3, 28
-    bl coop_hit_burst
 chi_deal:
     lfs 1, 0x10(28)                 # its way: from him to it, as long as the game's sweeps make it
     lfs 0, {C_POS}(29)
@@ -725,7 +628,6 @@ chi_source:
     bl {DEAL_DAMAGE}
 chi_out:
     lfd 31, 0x88(1)
-    ld 26, 0x80(1)
     ld 27, 0x78(1)
     ld 28, 0x70(1)
     addi 1, 1, 0x90
@@ -785,7 +687,6 @@ ccb_aim:
     li 9, 0
     stw 9, {C_ZAP}(29)
     stw 9, {C_POUND_HIT}(29)
-    stw 9, {C_POUND_POWER}(29)
     lwz 9, {T_POUND_WAIT}(29)
     stw 9, {C_POUND_WAIT}(29)
 ccb_pound:
@@ -799,7 +700,7 @@ ccb_out:
     mtlr 0
     blr
 
-coop_zap:                           # (r29/r30) Square held
+coop_zap:                           # (r29/r30) Circle held
     mflr 0
     std 0, 0x10(1)
     stdu 1, -0x80(1)
@@ -821,9 +722,7 @@ cz_on:
     bl coop_antenna
     bl coop_target
     mr. 28, 3
-    beq cz_tether
-    li 9, 0
-    stw 9, {C_LINK}(29)
+    beq cz_fizzle
     lfs 1, {C_ENERGY}(29)           # out of energy: nothing
     lfs 0, {T_ZERO}(29)
     fcmpu 0, 1, 0
@@ -858,7 +757,6 @@ cz_energy:
     lfs 0, {T_ZAP_DAMAGE}(29)
     fmuls 1, 1, 0
     lwz 4, {T_ZAP_FLAGS}(29)
-    li 5, 1
     bl coop_hit
 cz_sound:
     lwz 9, {C_ZAP}(29)
@@ -871,57 +769,6 @@ cz_sound:
     lwz 3, {T_SOUND_ZAP}(29)
     bl coop_sound
     b cz_out
-cz_tether:                          # no enemy, Ratchet in the aim: the Tesla Tether
-    bl coop_ratchet_aimed
-    cmpwi 3, 0
-    bne cz_link
-    li 9, 0
-    stw 9, {C_LINK}(29)
-    b cz_fizzle
-cz_link:
-    lfs 1, {C_ENERGY}(29)
-    lfs 0, {T_ZERO}(29)
-    fcmpu 0, 1, 0
-    ble cz_out
-    lfs 2, {T_COST_ZAP}(29)
-    lfs 0, {T_DT}(29)
-    fnmsubs 1, 2, 0, 1
-    lfs 0, {T_ZERO}(29)
-    fcmpu 0, 1, 0
-    bge cz_link_energy
-    fmr 1, 0
-cz_link_energy:
-    stfs 1, {C_ENERGY}(29)
-    lwz 9, {C_RATCHET_AT}(29)
-    stw 9, {C_BOLT_TO}(29)
-    lwz 9, {C_RATCHET_AT} + 4(29)
-    stw 9, {C_BOLT_TO} + 4(29)
-    lwz 9, {C_RATCHET_AT} + 8(29)
-    stw 9, {C_BOLT_TO} + 8(29)
-    bl coop_bolt
-    lwz 9, {C_LINK}(29)             # held long enough: Ratchet charged
-    addi 9, 9, 1
-    stw 9, {C_LINK}(29)
-    cmpwi 9, 1
-    bne cz_linked
-    li 3, {MSG_TETHER}
-    bl coop_msg
-    lwz 9, {C_LINK}(29)
-cz_linked:
-    lwz 10, {T_CHARGE_FRAMES}(29)
-    cmpw 9, 10
-    bne cz_fence
-    bl coop_ratchet_charge
-cz_fence:
-    lwz 9, {C_ZAP}(29)              # the tick: what touches the beam
-    addi 9, 9, -1
-    lwz 10, {T_ZAP_TICK}(29)
-    divwu 11, 9, 10
-    mullw 11, 11, 10
-    cmpw 11, 9
-    bne cz_sound
-    bl coop_fence
-    b cz_sound
 cz_fizzle:                          # nothing in reach: a short crackle ahead, for a moment
     lwz 9, {C_ZAP}(29)
     lwz 10, {T_FIZZLE_FRAMES}(29)
@@ -988,7 +835,15 @@ cpu_ready:
     stw 9, {C_PUNCH_DIR} + 4(29)
     bl coop_target
     cmpwi 3, 0
+    bne cpu_at
+    addi 3, 29, {C_POS}             # none in the aim (at rest it is his heading, which the leash turns
+    lfs 1, {T_RAM_SEEK}(29)         # home): the nearest within T_RAM_SEEK all round
+    li 4, 0
+    li 5, 0
+    bl coop_nearest
+    cmpwi 3, 0
     beq cpu_go
+cpu_at:
     lfs 0, 0x18(3)
     lfs 1, {T_TARGET_UP}(29)
     fadds 0, 0, 1
@@ -1077,14 +932,9 @@ cpu_dash:
     beq cpu_out
     li 9, 1
     stw 9, {C_PUNCH_HIT}(29)
-    mr 3, 28                        # charged: the Lightning Ram
-    bl coop_charged
-    cmpwi 3, 0
-    bne cpu_overload
     mr 3, 28
     lfs 1, {T_PUNCH_DAMAGE}(29)
     lwz 4, {T_PUNCH_FLAGS}(29)
-    li 5, 0
     bl coop_hit
     addi 3, 29, {C_FIST}            # a star of lightning where it struck
     lwz 4, {T_RAM_BURST}(29)
@@ -1094,39 +944,6 @@ cpu_dash:
     lfs 1, {T_KICK}(29)
     lwz 3, {T_KICK_FRAMES}(29)
     bl coop_shake
-    b cpu_out
-cpu_overload:                       # (r3 its mark) the Lightning Ram: three times, a ring, the chain at once
-    li 9, 0
-    stw 9, 0xc(3)                   # (its charge spent)
-    mr 3, 28
-    lfs 1, {T_PUNCH_DAMAGE}(29)
-    lfs 0, {T_OVERLOAD}(29)
-    fmuls 1, 1, 0
-    lwz 4, {T_PUNCH_FLAGS}(29)
-    li 5, 0
-    bl coop_hit
-    li 3, {FX_RING}
-    lwz 4, {T_RING_FRAMES}(29)
-    addi 5, 29, {C_FIST}
-    li 6, 0
-    li 7, 0
-    li 8, 0
-    lfs 1, {T_POUND_RADIUS}(29)
-    bl coop_fx_add
-    addi 3, 29, {C_FIST}
-    lwz 4, {T_COMBO_BURST}(29)
-    lwz 5, {T_RAM_BURST_FRAMES}(29)
-    lfs 1, {T_COMBO_BURST_R}(29)
-    bl coop_burst
-    addi 3, 29, {C_FIST}
-    bl coop_chain_reaction
-    lfs 1, {T_POUND_SHAKE}(29)
-    lwz 3, {T_POUND_SHAKE_FRAMES}(29)
-    bl coop_shake
-    lwz 3, {T_SOUND_COMBO}(29)
-    bl coop_sound
-    li 3, {MSG_RAM}
-    bl coop_msg
 cpu_out:
     ld 28, 0x70(1)
     addi 1, 1, 0x80
@@ -1231,6 +1048,10 @@ cpd_slam:
     lfs 0, {T_POUND_SPEED}(29)      # down
     fneg 0, 0
     stfs 0, {C_VEL} + 8(29)
+    lwz 9, {C_BLOCKED}(29)          # a floor stopped his fall (over his ground: a ledge): it struck there
+    andi. 9, 9, {BLOCK_DOWN}
+    lfs 0, {C_POS} + 8(29)
+    bne cpd_hit
     lfs 0, {C_GROUND}(29)
     lfs 1, {T_POUND_FLOOR}(29)
     fadds 0, 0, 1
@@ -1280,39 +1101,6 @@ coop_pound_hit:                     # (r29/r30) the shockwave: a ring, a star, a
     stfd 30, 0x78(1)
     lfs 31, {T_POUND_RADIUS}(29)    # f31 = its reach, f30 = its damage
     lfs 30, {T_POUND_DAMAGE}(29)
-    lwz 9, {HERO_LANDED}(30)        # Ratchet in the air beside him: the Thunder Slam
-    cmpwi 9, 0
-    bne cph_plain
-    addi 3, 30, 0x80
-    bl coop_distance
-    lfs 0, {T_THUNDER_NEAR}(29)
-    fcmpu 0, 1, 0
-    bgt cph_plain
-    li 9, 1
-    stw 9, {C_POUND_POWER}(29)
-    lfs 0, {T_THUNDER_SCALE}(29)
-    fmuls 31, 31, 0
-    lfs 0, {T_TWO}(29)
-    fmuls 30, 30, 0
-    li 3, {FX_RING}                 # a second, slower ring inside the first
-    lwz 4, {T_RING_FRAMES}(29)
-    slwi 4, 4, 1
-    addi 5, 29, {C_POS}
-    li 6, 0
-    li 7, 0
-    li 8, 0
-    fmr 1, 31
-    bl coop_fx_add
-    addi 3, 29, {C_POS}
-    lwz 4, {T_COMBO_BURST}(29)
-    lwz 5, {T_RAM_BURST_FRAMES}(29)
-    lfs 1, {T_COMBO_BURST_R}(29)
-    bl coop_burst
-    lwz 3, {T_SOUND_COMBO}(29)
-    bl coop_sound
-    li 3, {MSG_THUNDER}
-    bl coop_msg
-cph_plain:
     li 3, {FX_RING}
     lwz 4, {T_RING_FRAMES}(29)
     addi 5, 29, {C_POS}
@@ -1345,11 +1133,6 @@ cph_plain:
     bl {CRATE_SWEEP}
     lfs 1, {T_POUND_SHAKE}(29)
     lwz 3, {T_POUND_SHAKE_FRAMES}(29)
-    lwz 9, {C_POUND_POWER}(29)
-    cmpwi 9, 0
-    beq cph_shake
-    fadds 1, 1, 1
-cph_shake:
     bl coop_shake
     lwz 3, {T_SOUND_POUND}(29)
     bl coop_sound
@@ -1403,7 +1186,6 @@ cah_next:
     mr 3, 28
     fmr 1, 30
     lwz 4, {T_ZAP_FLAGS}(29)
-    li 5, 0
     bl coop_hit
     mr 3, 28                        # and a crackle on it
     bl coop_hit_burst
@@ -1491,514 +1273,6 @@ coop_hit_burst:                     # (r3 a moby; r29) a small crackle of lightn
     lfs 1, {T_HIT_BURST_R}(29)
     bl coop_burst
     addi 1, 1, 0x70
-    ld 0, 0x10(1)
-    mtlr 0
-    blr
-
-coop_charged:                       # (r3 a moby; r29) -> r3 = its mark while it is charged (Shock-Wrench), else 0
-    addi 9, 29, {C_COMBOS}
-    li 10, {COMBO_COUNT}
-    mtctr 10
-    lis 11, {FRAME_COUNTER_HA}
-    lwz 11, {FRAME_COUNTER_LO}(11)
-cch_find:
-    lwz 10, 0(9)
-    cmpw 10, 3
-    bne cch_next
-    lwz 10, 0xc(9)
-    cmpw 10, 11
-    ble cch_next
-    mr 3, 9
-    blr
-cch_next:
-    addi 9, 9, 0x10
-    bdnz cch_find
-    li 3, 0
-    blr
-
-coop_chain_reaction:                # (r3 a place; r29/r30) lightning jumps from there to up to T_CHAIN_TARGETS enemies
-    mflr 0
-    std 0, 0x10(1)
-    stdu 1, -0x90(1)
-    std 28, 0x70(1)
-    std 27, 0x78(1)
-    std 26, 0x80(1)
-    lwz 9, 0(3)                     # C_FXW: the last place the lightning came from
-    stw 9, {C_FXW}(29)
-    lwz 9, 4(3)
-    stw 9, {C_FXW} + 4(29)
-    lwz 9, 8(3)
-    stw 9, {C_FXW} + 8(29)
-    li 9, 0
-    stw 9, {C_OVER_TARGETS}(29)
-    addi 28, 29, {C_FXW}            # r28 = where the next is looked for from
-    lfs 1, {T_CHAIN_FIRST}(29)
-    stfs 1, {C_FXV} + 12(29)
-crx_next:
-    lwz 9, {C_OVER_TARGETS}(29)
-    lwz 10, {T_CHAIN_TARGETS}(29)
-    cmpw 9, 10
-    bge crx_out
-    mr 3, 28
-    lfs 1, {C_FXV} + 12(29)
-    li 4, 0
-    addi 5, 29, {C_OVER_TARGETS}
-    bl coop_nearest
-    mr. 27, 3
-    beq crx_out
-    lwz 9, {C_OVER_TARGETS}(29)
-    slwi 10, 9, 2
-    addi 10, 10, {C_LINKS}
-    stwx 27, 29, 10
-    addi 9, 9, 1
-    stw 9, {C_OVER_TARGETS}(29)
-    mr 3, 27                        # the jump: an arc from the last place to it, a crackle on it
-    addi 4, 29, {C_FXV}
-    bl coop_aimed
-    li 3, {FX_ARC}
-    lwz 4, {T_CHAIN_FRAMES}(29)
-    addi 5, 29, {C_FXW}
-    li 6, 0
-    addi 7, 29, {C_FXV}
-    li 8, 0
-    lfs 1, {T_ZERO}(29)
-    bl coop_fx_add
-    mr 3, 27
-    bl coop_hit_burst
-    mr 3, 27
-    lfs 1, {T_TESLA_DAMAGE}(29)
-    lfs 0, {T_CHAIN_DAMAGE}(29)
-    fmuls 1, 1, 0
-    lwz 4, {T_ZAP_FLAGS}(29)
-    li 5, 0
-    bl coop_hit
-    lwz 9, {C_FXV}(29)              # on from there
-    stw 9, {C_FXW}(29)
-    lwz 9, {C_FXV} + 4(29)
-    stw 9, {C_FXW} + 4(29)
-    lwz 9, {C_FXV} + 8(29)
-    stw 9, {C_FXW} + 8(29)
-    addi 28, 27, 0x10
-    lfs 1, {T_CHAIN_LINK}(29)
-    stfs 1, {C_FXV} + 12(29)
-    b crx_next
-crx_out:
-    lwz 9, {C_OVER_TARGETS}(29)
-    cmpwi 9, 0
-    beq crx_done
-    lfs 1, {T_COMBO_SHAKE}(29)
-    li 3, 10
-    bl coop_shake
-    li 3, {MSG_CHAIN}
-    bl coop_msg
-crx_done:
-    ld 26, 0x80(1)
-    ld 27, 0x78(1)
-    ld 28, 0x70(1)
-    addi 1, 1, 0x90
-    ld 0, 0x10(1)
-    mtlr 0
-    blr
-
-coop_ratchet_aimed:                 # (r29/r30) -> r3 = 1 when Ratchet is in the zap's reach and cone (C_RATCHET_AT: where)
-    lfs 1, 0x80(30)
-    lfs 0, {C_POS}(29)
-    fsubs 1, 1, 0
-    lfs 2, 0x84(30)
-    lfs 0, {C_POS} + 4(29)
-    fsubs 2, 2, 0
-    fmuls 3, 1, 1
-    fmadds 3, 2, 2, 3
-    fsqrts 3, 3
-    li 3, 0
-    lfs 0, {T_ZAP_RANGE}(29)
-    fcmpu 0, 3, 0
-    bgtlr
-    lfs 0, {T_SMALL}(29)
-    fcmpu 0, 3, 0
-    blt cra_in
-    lfs 0, {C_AIM}(29)
-    fmuls 4, 1, 0
-    lfs 0, {C_AIM} + 4(29)
-    fmadds 4, 2, 0, 4
-    lfs 0, {T_ZAP_CONE}(29)
-    fmuls 0, 0, 3
-    fcmpu 0, 4, 0
-    bltlr
-cra_in:
-    lfs 0, 0x80(30)
-    stfs 0, {C_RATCHET_AT}(29)
-    lfs 0, 0x84(30)
-    stfs 0, {C_RATCHET_AT} + 4(29)
-    lfs 0, 0x88(30)
-    lfs 1, {T_RATCHET_UP}(29)
-    fadds 0, 0, 1
-    stfs 0, {C_RATCHET_AT} + 8(29)
-    lfs 0, {T_ONE}(29)
-    stfs 0, {C_RATCHET_AT} + 12(29)
-    li 3, 1
-    blr
-
-coop_ratchet_charge:                # (r29/r30) Ratchet charged: a cage of lightning about him, a star, the camera
-    mflr 0
-    std 0, 0x10(1)
-    stdu 1, -0x70(1)
-    lwz 9, {T_RATCHET_CHARGE}(29)
-    stw 9, {C_RCHARGE}(29)
-    li 9, 0
-    stw 9, {C_AIR}(29)
-    li 3, {FX_CAGE}
-    lwz 4, {T_RATCHET_CHARGE}(29)
-    li 5, 0
-    lwz 6, 0x2080(30)
-    li 7, 0
-    li 8, 0
-    lfs 1, {T_ZERO}(29)
-    bl coop_fx_add
-    addi 3, 29, {C_RATCHET_AT}
-    lwz 4, {T_COMBO_BURST}(29)
-    lwz 5, {T_RAM_BURST_FRAMES}(29)
-    lfs 1, {T_COMBO_BURST_R}(29)
-    bl coop_burst
-    lfs 1, {T_COMBO_SHAKE}(29)
-    li 3, 8
-    bl coop_shake
-    lwz 3, {T_SOUND_COMBO}(29)
-    bl coop_sound
-    li 3, {MSG_CHARGED}
-    bl coop_msg
-    addi 1, 1, 0x70
-    ld 0, 0x10(1)
-    mtlr 0
-    blr
-
-coop_fence:                         # (r29/r30) every enemy within T_FENCE_WIDTH of the beam C_BOLT_FROM -> C_BOLT_TO hit
-    mflr 0
-    std 0, 0x10(1)
-    stdu 1, -0x90(1)
-    std 28, 0x70(1)
-    std 27, 0x78(1)
-    lis 27, {MOBY_LIST_HA}
-    addi 27, 27, {MOBY_LIST_LO} - 4
-cfe_next:
-    lwzu 28, 4(27)
-    cmpwi 28, 0
-    beq cfe_out
-    mr 3, 28
-    bl coop_enemy
-    cmpwi 3, 0
-    beq cfe_next
-    mr 3, 28                        # its body: P; the beam A -> B; t = (P - A).(B - A) / |B - A|^2 in 0..1
-    addi 4, 29, {C_FXV}
-    bl coop_aimed
-    lfs 1, {C_BOLT_TO}(29)
-    lfs 0, {C_BOLT_FROM}(29)
-    fsubs 1, 1, 0                   # f1..f3 = B - A
-    lfs 2, {C_BOLT_TO} + 4(29)
-    lfs 0, {C_BOLT_FROM} + 4(29)
-    fsubs 2, 2, 0
-    lfs 3, {C_BOLT_TO} + 8(29)
-    lfs 0, {C_BOLT_FROM} + 8(29)
-    fsubs 3, 3, 0
-    lfs 4, {C_FXV}(29)
-    lfs 0, {C_BOLT_FROM}(29)
-    fsubs 4, 4, 0                   # f4..f6 = P - A
-    lfs 5, {C_FXV} + 4(29)
-    lfs 0, {C_BOLT_FROM} + 4(29)
-    fsubs 5, 5, 0
-    lfs 6, {C_FXV} + 8(29)
-    lfs 0, {C_BOLT_FROM} + 8(29)
-    fsubs 6, 6, 0
-    fmuls 7, 1, 1
-    fmadds 7, 2, 2, 7
-    fmadds 7, 3, 3, 7               # f7 = |B - A|^2
-    lfs 0, {T_SMALL}(29)
-    fcmpu 0, 7, 0
-    ble cfe_next
-    fmuls 8, 4, 1
-    fmadds 8, 5, 2, 8
-    fmadds 8, 6, 3, 8
-    fdivs 8, 8, 7                   # f8 = t, kept within 0..1
-    lfs 0, {T_ZERO}(29)
-    fcmpu 0, 8, 0
-    bge cfe_low
-    fmr 8, 0
-cfe_low:
-    lfs 0, {T_ONE}(29)
-    fcmpu 0, 8, 0
-    ble cfe_high
-    fmr 8, 0
-cfe_high:
-    fnmsubs 4, 1, 8, 4              # P - (A + t (B - A))
-    fnmsubs 5, 2, 8, 5
-    fnmsubs 6, 3, 8, 6
-    fmuls 7, 4, 4
-    fmadds 7, 5, 5, 7
-    fmadds 7, 6, 6, 7
-    fsqrts 7, 7
-    lfs 0, {T_FENCE_WIDTH}(29)
-    fcmpu 0, 7, 0
-    bgt cfe_next
-    mr 3, 28
-    lfs 1, {T_TESLA_DAMAGE}(29)
-    lfs 0, {T_ZAP_DAMAGE}(29)
-    fmuls 1, 1, 0
-    lwz 4, {T_ZAP_FLAGS}(29)
-    li 5, 1
-    bl coop_hit
-    mr 3, 28
-    bl coop_hit_burst
-    b cfe_next
-cfe_out:
-    ld 27, 0x78(1)
-    ld 28, 0x70(1)
-    addi 1, 1, 0x90
-    ld 0, 0x10(1)
-    mtlr 0
-    blr
-
-coop_wrench_arc:                    # (r3 the enemy Ratchet's wrench hit, f1 its damage; r29/r30) the Charged Wrench:
-    mflr 0                          #  the hit again (T_RCHARGE_BONUS), lightning on to the next enemy
-    std 0, 0x10(1)
-    stdu 1, -0x80(1)
-    std 28, 0x70(1)
-    std 27, 0x78(1)
-    mr 28, 3
-    lfs 0, {T_RCHARGE_BONUS}(29)
-    fmuls 1, 1, 0
-    lwz 4, {T_PUNCH_FLAGS}(29)
-    li 5, 0
-    bl coop_hit
-    mr 3, 28
-    bl coop_hit_burst
-    li 3, {MSG_WRENCH}
-    bl coop_msg
-    li 9, 1                         # the next: the nearest other within T_ARC_REACH
-    stw 9, {C_OVER_TARGETS}(29)
-    stw 28, {C_LINKS}(29)
-    addi 3, 28, 0x10
-    lfs 1, {T_ARC_REACH}(29)
-    li 4, 0
-    addi 5, 29, {C_OVER_TARGETS}
-    bl coop_nearest
-    mr. 27, 3
-    beq cwa_out
-    mr 3, 28
-    addi 4, 29, {C_FXW}
-    bl coop_aimed
-    mr 3, 27
-    addi 4, 29, {C_FXV}
-    bl coop_aimed
-    li 3, {FX_ARC}
-    lwz 4, {T_CHAIN_FRAMES}(29)
-    addi 5, 29, {C_FXW}
-    li 6, 0
-    addi 7, 29, {C_FXV}
-    li 8, 0
-    lfs 1, {T_ZERO}(29)
-    bl coop_fx_add
-    mr 3, 27
-    bl coop_hit_burst
-    mr 3, 27
-    lfs 1, {T_ARC_DAMAGE}(29)
-    lwz 4, {T_ZAP_FLAGS}(29)
-    li 5, 0
-    bl coop_hit
-cwa_out:
-    ld 27, 0x78(1)
-    ld 28, 0x70(1)
-    addi 1, 1, 0x80
-    ld 0, 0x10(1)
-    mtlr 0
-    blr
-
-coop_ratchet_tick:                  # (r29/r30, every frame) Ratchet's charge running down; landing from a jump: the ring
-    lwz 9, {C_RCHARGE}(29)
-    cmpwi 9, 0
-    ble crt_none
-    addi 9, 9, -1
-    stw 9, {C_RCHARGE}(29)
-    lwz 9, {HERO_LANDED}(30)
-    cmpwi 9, 0
-    bne crt_down
-    lwz 9, {C_AIR}(29)
-    addi 9, 9, 1
-    stw 9, {C_AIR}(29)
-    blr
-crt_down:
-    lwz 9, {C_AIR}(29)
-    li 10, 0
-    stw 10, {C_AIR}(29)
-    lwz 10, {T_LAND_AIR}(29)
-    cmpw 9, 10
-    bltlr
-    mflr 0                          # the Lightning Landing
-    std 0, 0x10(1)
-    stdu 1, -0x70(1)
-    li 3, {FX_RING}
-    lwz 4, {T_RING_FRAMES}(29)
-    addi 5, 30, 0x80
-    li 6, 0
-    li 7, 0
-    li 8, 0
-    lfs 1, {T_LAND_RADIUS}(29)
-    bl coop_fx_add
-    addi 3, 30, 0x80
-    lwz 4, {T_RAM_BURST}(29)
-    lwz 5, {T_RAM_BURST_FRAMES}(29)
-    lfs 1, {T_RAM_BURST_R}(29)
-    bl coop_burst
-    addi 3, 30, 0x80
-    lfs 1, {T_LAND_RADIUS}(29)
-    lfs 2, {T_LAND_DAMAGE}(29)
-    bl coop_area_hit
-    lfs 1, {T_POUND_SHAKE}(29)
-    lwz 3, {T_POUND_SHAKE_FRAMES}(29)
-    bl coop_shake
-    lwz 3, {T_SOUND_POUND}(29)
-    bl coop_sound
-    li 3, {MSG_LANDING}
-    bl coop_msg
-    addi 1, 1, 0x70
-    ld 0, 0x10(1)
-    mtlr 0
-    blr
-crt_none:
-    li 9, 0
-    stw 9, {C_AIR}(29)
-    blr
-
-coop_combo_watch:                   # (r29/r30, every frame) a charged enemy that died: the Chain Reaction
-    mflr 0
-    std 0, 0x10(1)
-    stdu 1, -0x80(1)
-    std 28, 0x70(1)
-    std 27, 0x78(1)
-    addi 28, 29, {C_COMBOS}
-    li 27, {COMBO_COUNT}
-ccw_next:
-    lwz 3, 0(28)
-    cmpwi 3, 0
-    beq ccw_skip
-    lis 9, {FRAME_COUNTER_HA}       # charged still?
-    lwz 9, {FRAME_COUNTER_LO}(9)
-    lwz 10, 0xc(28)
-    cmpw 10, 9
-    ble ccw_skip
-    bl coop_enemy                   # and no longer one to fight: it died
-    cmpwi 3, 0
-    bne ccw_skip
-    li 9, 0
-    stw 9, 0xc(28)
-    lwz 3, 0(28)
-    addi 4, 29, {C_FXV}
-    bl coop_aimed
-    lwz 9, {C_FXV}(29)              # (coop_chain_reaction takes the place from C_FXV's copy)
-    stw 9, {C_FIST}(29)
-    lwz 9, {C_FXV} + 4(29)
-    stw 9, {C_FIST} + 4(29)
-    lwz 9, {C_FXV} + 8(29)
-    stw 9, {C_FIST} + 8(29)
-    addi 3, 29, {C_FIST}
-    lwz 4, {T_COMBO_BURST}(29)
-    lwz 5, {T_RAM_BURST_FRAMES}(29)
-    lfs 1, {T_COMBO_BURST_R}(29)
-    bl coop_burst
-    addi 3, 29, {C_FIST}
-    bl coop_chain_reaction
-    lwz 3, {T_SOUND_COMBO}(29)
-    bl coop_sound
-ccw_skip:
-    addi 28, 28, 0x10
-    addic. 27, 27, -1
-    bne ccw_next
-    ld 27, 0x78(1)
-    ld 28, 0x70(1)
-    addi 1, 1, 0x80
-    ld 0, 0x10(1)
-    mtlr 0
-    blr
-
-coop_combo_scan:                    # (r29/r30, every frame) Ratchet's wrench hits since the last frame
-    mflr 0
-    std 0, 0x10(1)
-    stdu 1, -0x90(1)
-    std 28, 0x70(1)
-    std 27, 0x78(1)
-    std 26, 0x80(1)
-    lis 9, {RING_INDEX_HA}
-    lwz 27, {RING_INDEX_LO}(9)      # r27 = where the game writes next
-    lwz 28, {C_LAST_RING}(29)       # r28 = the first not yet seen
-    lwz 9, {C_MODE}(29)
-    cmpwi 9, {MODE_FLY}
-    bne ccs_done
-ccs_next:
-    cmpw 28, 27
-    beq ccs_done
-    lis 26, {DAMAGE_RING_HA}
-    addi 26, 26, {DAMAGE_RING_LO}
-    slwi 9, 28, 6
-    add 26, 26, 9                   # r26 = the entry
-    addi 28, 28, 1
-    andi. 28, 28, 63
-    lwz 9, 0x20(26)
-    lwz 10, 0x2080(30)
-    cmpw 9, 10
-    bne ccs_next
-    lwz 9, 0x24(26)
-    andis. 9, 9, {WRENCH_FLAG_HI}
-    beq ccs_next
-    lwz 3, 0x34(26)
-    bl coop_enemy
-    cmpwi 3, 0
-    beq ccs_next
-    lwz 9, {C_RCHARGE}(29)          # Ratchet charged: the Charged Wrench
-    cmpwi 9, 0
-    ble ccs_mark
-    lwz 3, 0x34(26)
-    lfs 1, 0x2c(26)
-    bl coop_wrench_arc
-ccs_mark:
-    lwz 3, 0x34(26)
-    bl coop_mark
-    lis 9, {FRAME_COUNTER_HA}
-    lwz 9, {FRAME_COUNTER_LO}(9)
-    lwz 10, 0xc(3)                  # in a combo: the hit again, doubled
-    cmpw 10, 9
-    bgt ccs_double
-    stw 9, 4(3)                     # else noted; with a zap before it, the combo
-    lwz 10, 8(3)
-    subf 10, 10, 9
-    cmpwi 10, 0
-    blt ccs_next
-    lwz 11, {T_COMBO_WINDOW}(29)
-    cmpw 10, 11
-    bgt ccs_next
-    bl coop_combo_go
-    b ccs_next
-ccs_double:
-    lwz 3, 0x34(26)
-    lwz 4, 0x2080(30)
-    lwz 5, 0x24(26)
-    lfs 1, 0x2c(26)                 # what makes it T_COMBO_FACTOR times
-    lfs 0, {T_COMBO_FACTOR}(29)
-    lfs 2, {T_ONE}(29)
-    fsubs 0, 0, 2
-    fmuls 1, 1, 0
-    addi 7, 26, 0
-    addi 8, 26, 0x10
-    bl {DEAL_DAMAGE}
-    lwz 3, 0x34(26)
-    bl coop_hit_burst
-    b ccs_next
-ccs_done:
-    lis 9, {RING_INDEX_HA}          # (with what was dealt here)
-    lwz 9, {RING_INDEX_LO}(9)
-    stw 9, {C_LAST_RING}(29)
-    ld 26, 0x80(1)
-    ld 27, 0x78(1)
-    ld 28, 0x70(1)
-    addi 1, 1, 0x90
     ld 0, 0x10(1)
     mtlr 0
     blr

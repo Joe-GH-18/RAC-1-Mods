@@ -3,7 +3,7 @@
 Modes (C_MODE): docked (on Ratchet's back, as in the game), popping off (T_POP_FRAMES: from
 backpack Clank's place up T_POP_UP and back T_POP_BACK in Ratchet's frame), flying, docking
 (T_DOCK_FRAMES: from where he was to the seat, easing in). Player 2 joins with Start or Cross,
-docks by holding Select (T_DOCK_HOLD frames) or with Triangle within T_DOCK_REACH of the seat;
+docks by holding Select (T_DOCK_HOLD frames);
 without Player 2's pad for T_GONE_FRAMES he docks by himself. He docks at once (no movement)
 while Ratchet is not the hero (hero +0x20a4: Clank or Giant Clank sections), in a scene
 (SCENE_FLAG), dying (state 0x77) or without his backpack Clank.
@@ -17,15 +17,28 @@ boosts (T_BOOST_SPEED for T_BOOST_FRAMES, along the wish or his heading). The he
 (T_SPRING_K, T_SPRING_C) to Ratchet's ground plus the hover height (R2/L2 change it within
 T_HOVER_MIN..T_HOVER_MAX); his ground is his z while he is down (hero +0x300 counts frames on the
 ground, 0 in the air), so Clank does not bob with his jumps, and Clank stays above it plus
-T_FLOOR. Past T_LEASH_HARD, or off the screen for T_OFFSCREEN frames while more than
-T_BLINK_NEAR away, he blinks back to the slot. He turns to his velocity (or Ratchet's heading
-at rest), rolls by his sideways speed and pitches by his speed.
+T_FLOOR. Walls, ceilings and floors stop him (coop_fly_move, the game's ray per axis; the user:
+"fix the collision errors that clank flies through walls"). Past T_LEASH_HARD, or off the
+screen for T_OFFSCREEN frames while more than T_BLINK_NEAR away, he blinks back to the slot (or
+over Ratchet when a wall is between them). He turns to his velocity (or Ratchet's heading at
+rest), rolls by his sideways speed and pitches by his speed.
 """
 from ..game import *  # noqa: F401,F403
 
 SCENE_FLAG = 0xA10708          # not 0 in the game's scenes (5 during the gold weapon scene)
 STATE_DEATH = 0x77
 HERO_LANDED = 0x300            # frames on the ground (u32), 0 in the air (+0x418 stayed 0 on the ground, 2026-10-26)
+# The pack goes with Clank (spec 3.7; the user: "if clank is not on ratchets back, he should be
+# unable to use any pack movement"): set_state, after it has saved its registers, at the test of
+# the state type (r28 = the state asked for, r27 = hero; r0, r3 free). Out of his back (and
+# T_PACK_GATE), the glide (8) is refused the game's own way
+# (r3 = 0 to its epilogue, as for state type 0x14) and the crouch's pack jumps (0xa, 0x10 the long
+# jumps, 0xf, 0xd the high jumps) are his plain jump, 7, as without a pack.
+PACK_HOOK, PACK_HOOK_WORD = 0xB7320, 0x2C050014   # cmpwi r5, 0x14
+PACK_REFUSE = 0xB7330                             # li r3, 0; b to the epilogue
+PACK_HOVERS, PACK_JUMPS, PLAIN_JUMP = (0x8,), (0xA, 0x10, 0xF, 0xD), 0x7
+# (0xe is his double jump, not the pack's: refused at first, the user: "ratchet can also not do a
+# double jump fix that")
 COS, SIN = 0x5E8078, 0x5E8128  # (f1 angle) -> f1
 ANGLE_DIFF = 0x5025E0          # (f1, f2) -> f1 - f2 wrapped to -pi..pi
 BUTTON_L2, BUTTON_R2, BUTTON_CROSS = 0x1, 0x2, 0x40
@@ -47,6 +60,11 @@ coop_frame:                         # replaces bl HERO_MAIN; r31 = state block, 
     addi 30, 30, {HERO_LO}
     lis 29, {COOP_HA}
     addi 29, 29, {COOP_LO}
+    bl coop_new_level               # (first: the others must not touch the old level's mobys)
+    bl coop_cam_restore             # the game's camera place back before its update (camera.py)
+    bl coop_preview_late            # the menu's preview Clank away once the game runs again (preview.py)
+    bl coop_banks                   # our own sound banks in, once (body.py)
+    bl coop_sound_try
     bl coop_tick
     ld 27, 0x90(1)
     ld 28, 0x88(1)
@@ -59,18 +77,19 @@ coop_frame:                         # replaces bl HERO_MAIN; r31 = state block, 
 coop_frame_next:
     {CHAIN}
 
-coop_tick:
-    mflr 0
-    std 0, 0x10(1)
-    stdu 1, -0x80(1)
-    lis 9, {FRAME_COUNTER_HA}       # a new level: the mobys went with the old one
+coop_new_level:                     # (r29) a new level: the mobys went with the old one
+    lis 9, {FRAME_COUNTER_HA}
     lwz 9, {FRAME_COUNTER_LO}(9)
     lwz 10, {C_FRAME}(29)
     stw 9, {C_FRAME}(29)
     cmplw 9, 10
-    bge ct_input
-    bl coop_forget
-ct_input:
+    bgelr
+    b coop_forget
+
+coop_tick:
+    mflr 0
+    std 0, 0x10(1)
+    stdu 1, -0x80(1)
     li 9, 0                         # the bolts are made anew each frame
     stw 9, {C_BOLT_N}(29)
     lis 9, {FRAME_COUNTER_HA}       # the lightning's shape: new every 2 frames
@@ -130,9 +149,6 @@ ct_body:
     beq ct_shared
     bl coop_body_place
 ct_shared:
-    bl coop_combo_scan
-    bl coop_combo_watch
-    bl coop_ratchet_tick
     bl coop_fx
     lwz 9, {C_MODE}(29)
     subfic 9, 9, 0
@@ -197,6 +213,11 @@ ci_gone:
     lwz 11, {T_GONE_FRAMES}(29)
     cmpw 10, 11
     bltlr
+    lwz 10, {C_AI_ON}(29)           # nobody at the second pad: AI Clank, if chosen on the menu (menu.py)
+    lis 11, {AI_SAVE_HA}            # or set by tools/coop.py (ai.py)
+    lhz 11, {AI_SAVE_LO}(11)
+    or. 10, 10, 11
+    bne coop_ai
     li 10, {DRIVER_NONE}
     stw 10, {C_DRIVER}(29)
     blr
@@ -289,10 +310,6 @@ coop_join:                          # (r29/r30) off Ratchet's back
     stw 9, {C_YAW}(29)
     lwz 9, 0x88(30)
     stw 9, {C_GROUND}(29)
-    li 9, 1                         # Player 2 joined: the message
-    stw 9, {C_MSG}(29)
-    li 9, 150
-    stw 9, {C_MSG_LEFT}(29)
     addi 3, 29, {C_SEAT}            # a star of lightning at the seat
     lwz 4, {T_SEAT_BURST}(29)
     li 5, 10
@@ -384,10 +401,6 @@ coop_docking:                       # (r29/r30) to the seat, easing in, then doc
     bl coop_burst
     lwz 3, {T_SOUND_DOCK}(29)
     bl coop_sound
-    li 9, 2                         # Clank docked: the message
-    stw 9, {C_MSG}(29)
-    li 9, 120
-    stw 9, {C_MSG_LEFT}(29)
     bl coop_dock_now
     b cdk_out
 cdk_move:
@@ -739,17 +752,7 @@ cf_spring:
     fmadds 3, 1, 0, 3
     stfs 3, {C_VEL} + 8(29)
 cf_place:
-    li 7, 0                         # the place
-cf_axis:
-    addi 8, 7, {C_POS}
-    lfsx 1, 29, 8
-    addi 9, 7, {C_VEL}
-    lfsx 2, 29, 9
-    fmadds 1, 2, 0, 1
-    stfsx 1, 29, 8
-    addi 7, 7, 4
-    cmpwi 7, 12
-    blt cf_axis
+    bl coop_fly_move                # the place, stopped by walls
     lfs 1, {C_GROUND}(29)           # never under his ground
     lfs 0, {T_FLOOR}(29)
     fadds 1, 1, 0
@@ -768,6 +771,101 @@ cf_out:
     lfd 30, 0x78(1)
     lfd 31, 0x70(1)
     addi 1, 1, 0x80
+    ld 0, 0x10(1)
+    mtlr 0
+    blr
+
+coop_fly_move:                      # (r29) his place moved by C_VEL for a frame, each axis on its own (so he
+    mflr 0                          # slides along a wall): unless the game's ray from his middle, the move and
+    std 0, 0x10(1)                  # T_COLL_R (down: to his feet, up: T_COLL_TOP) beyond, meets something; then
+    stdu 1, -0x90(1)                # that axis stays and its speed is 0 (C_BLOCKED: which)
+    std 28, 0x70(1)
+    std 27, 0x78(1)
+    stfd 31, 0x80(1)
+    stfd 30, 0x88(1)
+    li 27, 0                        # r27 = BLOCK_* bits
+    li 28, 0                        # r28 = the axis (byte offset)
+cfm_axis:
+    addi 8, 28, {C_VEL}
+    lfsx 1, 29, 8
+    lfs 0, {T_DT}(29)
+    fmuls 31, 1, 0                  # f31 = this frame's move
+    fabs 1, 31
+    lfs 0, {T_SMALL}(29)
+    fcmpu 0, 1, 0
+    blt cfm_next
+    lwz 9, {T_COLL_ON}(29)
+    cmpwi 9, 0
+    beq cfm_go
+    lwz 9, {C_POS}(29)              # the ray from his middle
+    stw 9, {C_RAY_FROM}(29)
+    lwz 9, {C_POS} + 4(29)
+    stw 9, {C_RAY_FROM} + 4(29)
+    lfs 0, {C_POS} + 8(29)
+    lfs 1, {T_COLL_UP}(29)
+    fadds 0, 0, 1
+    stfs 0, {C_RAY_FROM} + 8(29)
+    lfs 0, {T_ONE}(29)
+    stfs 0, {C_RAY_FROM} + 12(29)
+    li 9, 0
+cfm_copy:
+    addi 8, 9, {C_RAY_FROM}
+    lwzx 10, 29, 8
+    addi 8, 9, {C_RAY_TO}
+    stwx 10, 29, 8
+    addi 9, 9, 4
+    cmpwi 9, 16
+    blt cfm_copy
+    lfs 30, {T_COLL_R}(29)          # f30 = the reach beyond the move, r9 = the bit
+    li 9, {BLOCK_X}
+    cmpwi 28, 4
+    blt cfm_sign
+    li 9, {BLOCK_Y}
+    beq cfm_sign
+    lfs 30, {T_COLL_UP}(29)
+    li 9, {BLOCK_DOWN}
+    lfs 0, {T_ZERO}(29)
+    fcmpu 0, 31, 0
+    blt cfm_sign
+    lfs 30, {T_COLL_TOP}(29)
+    li 9, {BLOCK_UP}
+cfm_sign:
+    lfs 0, {T_ZERO}(29)
+    fcmpu 0, 31, 0
+    bge cfm_reach
+    fneg 30, 30
+cfm_reach:
+    std 9, 0x60(1)
+    addi 8, 28, {C_RAY_TO}
+    lfsx 0, 29, 8
+    fadds 0, 0, 31
+    fadds 0, 0, 30
+    stfsx 0, 29, 8
+    lwz 6, {C_BODY}(29)             # (him left out)
+    bl coop_cam_ray
+    ld 9, 0x60(1)
+    cmpwi 3, 0
+    beq cfm_go
+    or 27, 27, 9
+    li 9, 0
+    addi 8, 28, {C_VEL}
+    stwx 9, 29, 8
+    b cfm_next
+cfm_go:
+    addi 8, 28, {C_POS}
+    lfsx 0, 29, 8
+    fadds 0, 0, 31
+    stfsx 0, 29, 8
+cfm_next:
+    addi 28, 28, 4
+    cmpwi 28, 12
+    blt cfm_axis
+    stw 27, {C_BLOCKED}(29)
+    lfd 30, 0x88(1)
+    lfd 31, 0x80(1)
+    ld 27, 0x78(1)
+    ld 28, 0x70(1)
+    addi 1, 1, 0x90
     ld 0, 0x10(1)
     mtlr 0
     blr
@@ -863,8 +961,37 @@ coop_blink:                         # (r29/r30) back to the slot at once
     lfs 1, {T_HIT_BURST_R}(29)
     bl coop_burst
     bl coop_slot
-    stfs 1, {C_POS}(29)
-    stfs 2, {C_POS} + 4(29)
+    stfs 1, {C_RAY_TO}(29)          # the slot, unless a wall is between Ratchet and it: then over him
+    stfs 2, {C_RAY_TO} + 4(29)
+    lfs 0, {C_GROUND}(29)
+    lfs 1, {C_HOVER}(29)
+    fadds 0, 0, 1
+    stfs 0, {C_RAY_TO} + 8(29)
+    lfs 1, {T_COLL_UP}(29)
+    fadds 0, 0, 1
+    stfs 0, {C_RAY_TO} + 8(29)
+    lfs 0, {T_ONE}(29)
+    stfs 0, {C_RAY_TO} + 12(29)
+    stfs 0, {C_RAY_FROM} + 12(29)
+    lwz 9, 0x80(30)
+    stw 9, {C_RAY_FROM}(29)
+    lwz 9, 0x84(30)
+    stw 9, {C_RAY_FROM} + 4(29)
+    lfs 0, 0x88(30)
+    lfs 1, {T_CAM_LOOK_UP}(29)
+    fadds 0, 0, 1
+    stfs 0, {C_RAY_FROM} + 8(29)
+    lwz 6, {C_BODY}(29)
+    bl coop_cam_ray
+    lwz 9, {C_RAY_TO}(29)
+    lwz 10, {C_RAY_TO} + 4(29)
+    cmpwi 3, 0
+    beq cbl_place
+    lwz 9, 0x80(30)
+    lwz 10, 0x84(30)
+cbl_place:
+    stw 9, {C_POS}(29)
+    stw 10, {C_POS} + 4(29)
     lfs 0, {C_GROUND}(29)
     lfs 1, {C_HOVER}(29)
     fadds 0, 0, 1
@@ -1091,5 +1218,39 @@ cat_out:
     blr
 cat_zero:
     fmr 1, 0
+    blr
+coop_pack:                          # (set_state: r28 the state asked for, r27 hero; r0, r3 free) no pack moves while he is out
+    lis 3, {COOP_HA}
+    addi 3, 3, {COOP_LO}
+    lwz 0, {T_PACK_GATE}(3)
+    cmpwi 0, 0
+    beq cpk_game
+    lwz 0, {C_MODE}(3)
+    cmpwi 0, {MODE_DOCKED}
+    beq cpk_game
+    lbz 0, {HERO_KIND}(27)
+    cmpwi 0, 0
+    bne cpk_game
+    cmpwi 28, 0x8
+    beq cpk_refuse
+    cmpwi 28, 0xa
+    beq cpk_plain
+    cmpwi 28, 0x10
+    beq cpk_plain
+    cmpwi 28, 0xf
+    beq cpk_plain
+    cmpwi 28, 0xd
+    beq cpk_plain
+    b cpk_game
+cpk_plain:
+    li 28, {PLAIN_JUMP}
+    b cpk_game
+cpk_refuse:
+    lis 3, {PACK_REFUSE_HA}         # (r3, not r0: addi takes 0 there for the number 0)
+    addi 3, 3, {PACK_REFUSE_LO}
+    mtlr 3
+    blr
+cpk_game:
+    cmpwi 5, 0x14                   # the displaced instruction
     blr
 """

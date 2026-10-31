@@ -9,8 +9,6 @@ coop_bolt_draw at render time) with t going 0 -> 1 over its frames:
   FX_RING   a closed jagged ring about place A, its radius F_RADIUS * (T_RING_START ..1) by t, a
             little above A (T_RING_UP), each point moved out or in by up to T_RING_JITTER: the
             ground pound's shockwave.
-  FX_ARC    a bolt from place A to place B: the chain's jumps.
-  FX_CAGE   three bolts winding about the moby F_MOBY (T_CAGE_*), turning with t: a charged enemy.
 coop_fx_add takes the next slot round (a full list loses its oldest effect).
 """
 from ..game import *  # noqa: F401,F403
@@ -97,20 +95,8 @@ cfx_go:
     b cfx_skip
 cfx_ring:
     cmpwi 9, {FX_RING}
-    bne cfx_arc
-    bl coop_fx_ring
-    b cfx_skip
-cfx_arc:
-    cmpwi 9, {FX_ARC}
-    bne cfx_cage
-    addi 3, 28, {F_A}
-    addi 4, 28, {F_B}
-    bl coop_bolt_from_to
-    b cfx_skip
-cfx_cage:
-    cmpwi 9, {FX_CAGE}
     bne cfx_skip
-    bl coop_fx_cage
+    bl coop_fx_ring
 cfx_skip:
     addi 27, 27, 1
     cmpwi 27, {FX_COUNT}
@@ -276,84 +262,6 @@ cfr_point:
 cfr_out:
     lfd 30, 0x80(1)
     ld 25, 0x78(1)
-    ld 26, 0x70(1)
-    addi 1, 1, 0xa0
-    ld 0, 0x10(1)
-    mtlr 0
-    blr
-
-coop_fx_cage:                       # (r28 the slot, f31 t; r29) three bolts winding about its moby
-    mflr 0
-    std 0, 0x10(1)
-    stdu 1, -0xa0(1)
-    std 26, 0x70(1)
-    stfd 30, 0x78(1)
-    stfd 29, 0x80(1)
-    lwz 9, {F_MOBY}(28)             # it follows the moby while that lives
-    cmpwi 9, 0
-    beq cfc_out
-    lfs 0, 0x10(9)
-    stfs 0, {F_A}(28)
-    lfs 0, 0x14(9)
-    stfs 0, {F_A} + 4(28)
-    lfs 0, 0x18(9)
-    lfs 1, {T_CAGE_UP}(29)
-    fadds 0, 0, 1
-    stfs 0, {F_A} + 8(28)
-    lfs 0, {T_CAGE_SPIN}(29)        # f30 = the first bolt's angle
-    fmuls 30, 31, 0
-    li 26, 3
-cfc_one:
-    cmpwi 26, 0
-    ble cfc_out
-    fmr 1, 30                       # from (angle, low) to (angle + 1.9, high)
-    bl {COS}
-    fmr 29, 1
-    fmr 1, 30
-    bl {SIN}
-    lfs 0, {T_CAGE_R}(29)
-    lfs 2, {F_A}(28)
-    fmadds 2, 29, 0, 2
-    stfs 2, {C_BOLT_FROM}(29)
-    lfs 2, {F_A} + 4(28)
-    fmadds 2, 1, 0, 2
-    stfs 2, {C_BOLT_FROM} + 4(29)
-    lfs 2, {F_A} + 8(28)
-    lfs 0, {T_CAGE_LOW}(29)
-    fadds 2, 2, 0
-    stfs 2, {C_BOLT_FROM} + 8(29)
-    lfs 0, {T_TWO}(29)              # (2 less a tenth: 1.9)
-    lfs 1, {T_HALF}(29)
-    fmuls 1, 1, 1
-    fmuls 1, 1, 1                   # 0.0625
-    fsubs 0, 0, 1
-    fadds 1, 30, 0
-    stfd 1, 0x60(1)
-    bl {COS}
-    fmr 29, 1
-    lfd 1, 0x60(1)
-    bl {SIN}
-    lfs 0, {T_CAGE_R}(29)
-    lfs 2, {F_A}(28)
-    fmadds 2, 29, 0, 2
-    stfs 2, {C_BOLT_TO}(29)
-    lfs 2, {F_A} + 4(28)
-    fmadds 2, 1, 0, 2
-    stfs 2, {C_BOLT_TO} + 4(29)
-    lfs 2, {F_A} + 8(28)
-    lfs 0, {T_CAGE_HIGH}(29)
-    fadds 2, 2, 0
-    stfs 2, {C_BOLT_TO} + 8(29)
-    bl coop_bolt
-    lfs 0, {T_TWO_PI}(29)           # the next a third round
-    lfs 1, {T_THREE}(29)
-    fdivs 0, 0, 1
-    fadds 30, 30, 0
-    addi 26, 26, -1
-    b cfc_one
-cfc_out:
-    lfd 29, 0x80(1)
-    lfd 30, 0x78(1)
     ld 26, 0x70(1)
     addi 1, 1, 0xa0
     ld 0, 0x10(1)

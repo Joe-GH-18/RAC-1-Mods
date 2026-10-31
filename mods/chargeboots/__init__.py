@@ -73,9 +73,9 @@ def hooks(args):
         Hook(CRANK_HOOK, "crank", CRANK_HOOK_WORD), Hook(CRANK_ANIM_HOOK, "crank_anim", CRANK_ANIM_HOOK_WORD),
         Hook(CRANK_PULL_HOOK, "crank_pull", CRANK_PULL_HOOK_WORD), Hook(CRANK_TURN_HOOK, "crank_turn", CRANK_TURN_HOOK_WORD),
         *(Hook(site, "boots_spawn", SPAWN) for site in FOOT_SPAWN_HOOKS),
-        Hook(GRID_ENTRY_HOOK, "grid_entry", GRID_ENTRY_HOOK_WORD), Hook(GRID_SELECTED_HOOK, "grid_selected", GRID_SELECTED_HOOK_WORD),
-        Hook(GRID_PRESS_HOOK, "grid_press", GRID_PRESS_HOOK_WORD), Hook(GRID_WORN_HOOK, "grid_worn", GRID_WORN_HOOK_WORD),
-        Hook(GRID_EQUIP_HOOK, "grid_equip", GRID_EQUIP_HOOK_WORD), Hook(TEXT_HOOK, "menu_text", TEXT_LOOKUP),
+        Hook(GRID_ENTRY_HOOK, "grid_entry", GRID_ENTRY_HOOK_WORD, chain=True), Hook(GRID_SELECTED_HOOK, "grid_selected", GRID_SELECTED_HOOK_WORD),
+        Hook(GRID_PRESS_HOOK, "grid_press", GRID_PRESS_HOOK_WORD, chain=True), Hook(GRID_WORN_HOOK, "grid_worn", GRID_WORN_HOOK_WORD),
+        Hook(GRID_EQUIP_HOOK, "grid_equip", GRID_EQUIP_HOOK_WORD), Hook(TEXT_HOOK, "menu_text", TEXT_LOOKUP, chain=True),
         Hook(PREVIEW_CLASS_HOOK, "preview_class", PREVIEW_CLASS_HOOK_WORD), Hook(PREVIEW_SPAWN_HOOK, "preview_spawn", SPAWN)]
 
 

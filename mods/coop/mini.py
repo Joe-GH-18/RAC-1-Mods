@@ -12,7 +12,9 @@ as a backpack Clank (CARRIER_CLASS) with that model, at T_MINI_SCALE (the legs a
 Golden Clank's parts are (Ratchet's light times T_MINI_TINT_*, at the HUD hook).
 
 He walks camera-relative at T_MINI_SPEED, jumps with Cross (T_MINI_JUMP against T_MINI_GRAVITY)
-and, Cross held while falling, hovers (T_MINI_HOVER_FALL, T_MINI_HOVER_FRAMES a jump). Floors and
+and, Cross held while falling, hovers (T_MINI_HOVER_FALL, T_MINI_HOVER_FRAMES a jump; 0 now: Quartu's
+Giant Clank does not hover). The jump is his, scaled: on Quartu (set_state 0x5e at 0xbaf78) 4.2 high
+against 30 units/s^2 at scale 0.75, animation 4 (0xbbae4; 6 is his hurt state 0x5d's). Floors and
 walls come from the game's ray MINI_RAY (the hero's ground probe 0x7e5e8 calls it: r3 from, r4
 to, r5 2, r6 a moby left out, r7 0 -> r3 not 0 on a hit, the place at RAY_HIT): down from
 T_MINI_PROBE_UP above him to T_MINI_PROBE_DOWN below for the floor, and ahead of him at
@@ -21,7 +23,7 @@ below him) he is put back beside him.
 
 His moves, with Giant Clank's animations and Golden Clank's MOVE_TABLE timing: Square the punch
 (left and right by turns, a lunge, a hit at its action frame: T_MINI_PUNCH_*), Circle the missile
-volley (repeats while held), Triangle the golden bomb (T_MINI_BOMB_WAIT between). The missiles
+volley (repeats while held); he stands in them. The golden bomb is gone (the user). The missiles
 and the bomb are Golden Clank's: COOP_FIRE asks it to fire them from his moby (COOP_MINI_MOBY),
 his forearms' joints and his heading, at half the giant's size.
 """
@@ -264,14 +266,7 @@ coop_mini_moves:                    # (r29/r30/r31) Square the punch, Circle the
     andi. 11, 10, {MINI_MISSILE_BUTTON}
     li 9, {MOVE_MISSILES}
     bne cmm_start
-    andi. 11, 10, {MINI_BOMB_BUTTON}
-    beq cmm_out
-    lwz 11, {C_MINI_BOMB_WAIT}(29)
-    cmpwi 11, 0
-    bgt cmm_out
-    lwz 11, {T_MINI_BOMB_WAIT}(29)
-    stw 11, {C_MINI_BOMB_WAIT}(29)
-    li 9, {MOVE_BOMB}
+    b cmm_out                       # (no golden bomb: the user, "remove the golden bomb")
 cmm_start:
     stw 9, {C_MINI_MOVE}(29)
     li 10, 0
@@ -469,6 +464,12 @@ cmw_speed:
     fmuls 7, 7, 0
     fmuls 8, 8, 0
 cmw_grip:
+    lwz 9, {C_MINI_MOVE}(29)        # in a move he stands, as Giant Clank does (his moves set the target
+    cmpwi 9, 0                      # speed 0; the user: "no moving when missiles"); the punch's lunge below
+    beq cmw_wish
+    lfs 7, {T_ZERO}(29)
+    fmr 8, 7
+cmw_wish:
     stfs 7, {C_MINI_WISH}(29)
     stfs 8, {C_MINI_WISH} + 4(29)
     lfs 0, {T_MINI_GRIP}(29)        # the velocity a part of the way to it
@@ -960,7 +961,7 @@ crt_spawn:
     stw 3, {C_RIDER}(29)
     cmpwi 3, 0
     beq crt_out
-    lwz 4, 0x2080(30)               # Ratchet's model at his size
+    lwz 4, 0x2080(30)               # Ratchet's model (scaled in coop_rider_place)
     lwz 5, 0x24(4)
     stw 5, 0x24(3)
     lwz 6, 0x2c(4)
@@ -1002,9 +1003,28 @@ coop_rider_place:                   # (r29/r30) the rider at the seat on the min
     beqlr
     mflr 0
     std 0, 0x10(1)
-    stdu 1, -0x70(1)
-    std 31, 0x68(1)
+    stdu 1, -0x90(1)
+    std 31, 0x88(1)
     mr 31, 3
+    mr 3, 4                         # the seat goes with his animated back (the user: "he does not stick
+    lwz 4, {T_RIDE_JOINT}(29)       # to the animated part of the model"): JOINT_POSITION of the joint
+    addi 5, 1, 0x70                 # ending at bone 73, its way from his place times T_RIDE_JOINT_SCALE
+    bl {JOINT_POSITION}             # (1: times the model's 0.75, as for Golden Clank's parts, sank him into
+    lwz 3, {C_MINI}(29)             # the mini: 1.07 up, bone 73 is 1.46)
+    lfs 3, {T_RIDE_JOINT_SCALE}(29)
+    li 7, 0
+crp_axis:
+    add 8, 3, 7
+    lfs 0, 0x10(8)
+    addi 9, 1, 0x70
+    lfsx 1, 9, 7
+    fsubs 1, 1, 0
+    fmadds 1, 1, 3, 0
+    addi 9, 29, {C_RIDE_SEAT}
+    stfsx 1, 9, 7
+    addi 7, 7, 4
+    cmpwi 7, 12
+    blt crp_axis
     lfs 1, {C_MINI_YAW}(29)
     bl {COS}
     stfs 1, {C_TMP}(29)
@@ -1014,10 +1034,10 @@ coop_rider_place:                   # (r29/r30) the rider at the seat on the min
     lfs 0, {T_RIDE_AHEAD}(29)
     fmuls 0, 0, 2
     lfs 3, {C_TMP}(29)
-    lfs 4, {C_MINI_POS}(29)
+    lfs 4, {C_RIDE_SEAT}(29)
     fmadds 4, 3, 0, 4
     stfs 4, 0x10(31)
-    lfs 4, {C_MINI_POS} + 4(29)
+    lfs 4, {C_RIDE_SEAT} + 4(29)
     fmadds 4, 1, 0, 4
     stfs 4, 0x14(31)
     lfs 0, {T_DISMOUNT_BACK}(29)    # and where he jumps off from
@@ -1028,7 +1048,7 @@ coop_rider_place:                   # (r29/r30) the rider at the seat on the min
     fnmsubs 4, 1, 0, 4
     stfs 4, {C_DISMOUNT} + 4(29)
     lfs 0, {T_RIDE_UP}(29)
-    lfs 4, {C_MINI_POS} + 8(29)
+    lfs 4, {C_RIDE_SEAT} + 8(29)
     fmadds 4, 0, 2, 4
     stfs 4, 0x18(31)
     lwz 4, {C_MINI}(29)             # turned as the mini is
@@ -1041,8 +1061,13 @@ coop_rider_place:                   # (r29/r30) the rider at the seat on the min
     lwz 4, 0x2080(30)
     lwz 5, 0x38(4)
     stw 5, 0x38(31)
-    ld 31, 0x68(1)
-    addi 1, 1, 0x70
+    lfs 5, 0x2c(4)                  # his scale, as small to the mini as on Quartu
+    lfs 6, {T_RIDE_SCALE}(29)
+    fmuls 5, 5, 6
+    fmuls 5, 5, 2
+    stfs 5, 0x2c(31)
+    ld 31, 0x88(1)
+    addi 1, 1, 0x90
     ld 0, 0x10(1)
     mtlr 0
     blr
